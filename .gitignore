@@ -1,1 +1,10 @@
+# Automatisch generierte Dateien
 .DS_Store
+
+# Virtuelle Umgebung
+venv/
+
+# Caches & temporäre Dateien
+__pycache__/
+*.pyc
+*.pyo
