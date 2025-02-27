@@ -9,3 +9,6 @@ __pycache__/
 *.pyc
 *.pyo
 controller/send_test_message.py
+venv/
+logs/
+http_requests.log
