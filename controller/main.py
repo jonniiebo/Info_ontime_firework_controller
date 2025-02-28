@@ -1,4 +1,4 @@
-import os
+import os                                                          
 import vlc
 import httpx
 import logging
@@ -7,19 +7,12 @@ from pythonosc.dispatcher import Dispatcher
 from pythonosc.osc_server import BlockingOSCUDPServer
 from pythonosc.udp_client import SimpleUDPClient
 
+
 ### Logger konfigurieren
 # Logger Controller
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("controller")
 
-# Logger-Simulation
-http_logger = logging.getLogger("http_requests")
-http_logger.setLevel(logging.INFO)
-# Logger-Datei
-http_handler = logging.FileHandler("http_requests.log")
-http_formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
-http_handler.setFormatter(http_formatter)
-http_logger.addHandler(http_handler)
 
 # Dynamische Pfadkonfiguration
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -32,7 +25,6 @@ SIMULATOR_URL = "http://127.0.0.1:8000"
 current_media = None
 paused_time = {}
 next_event = None
-
 
 # VLC-Instanz erstellen
 vlc_instance = vlc.Instance("--quiet", "--verbose=0")
@@ -55,7 +47,7 @@ def send_fireworks_request(endpoint, method="PATCH", sequence_name=None):
         response = httpx.request(method, url, timeout=5)
         
         # HTTP-Responses nur in die Log-Datei, NICHT in die Konsole
-        http_logger.info(f"{method} {url} - Status: {response.status_code} - Antwort: {response.text}")
+        logger.info(f"{method} {url} - Status: {response.status_code} - Antwort: {response.text}")
 
         # Falls ein HTTP-Fehler auftritt, zusätzlich als ERROR ins Terminal
         if response.status_code >= 400:
@@ -210,12 +202,22 @@ def handle_second_stage_event(address, *args):
     else:
         logger.warning("Kein `next_event` gesetzt – `/second_stage` wurde ignoriert.")
 
+def handle_length_event(address, *args):
+    """Setzt die Länge der Sequenz."""
+    length = int(args[0])
+    length = length/1000
+    logger.info(f"Setze Länge der Sequenz auf {length} Sekunden.")
+
+def ui_startup():
+    """Startet die UI."""
+    os.system("python app.py")
+    logger.info("UI gestartet.")
         
 # OSC-Server starten
 def start_osc_server():
     dispatcher = Dispatcher()
-    dispatcher.map("/start", handle_start_event)
     dispatcher.map("/stop", handle_stop_event)
+    dispatcher.map("/start", handle_start_event)
     dispatcher.map("/pause", handle_pause_event)
     dispatcher.map("/next_event", handle_next_event)
     dispatcher.map("/first_stage", handle_first_stage_event)
@@ -227,6 +229,7 @@ def start_osc_server():
 
 if __name__ == "__main__":
     logger.info("Initialisiere Sequenzen und starte OSC-Server...")
+    ui_startup()
     initialize_sequences()
     osc_thread = threading.Thread(target=start_osc_server, daemon=True)
     osc_thread.start()

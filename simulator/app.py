@@ -1,10 +1,30 @@
+import os
+import httpx
+import logging
 from typing import Annotated, Literal
-
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 app = FastAPI(title="Feuerwerk-Simulator", version="1.0.0")
+
+# Berechne das Verzeichnis der statischen Web‑UI-Dateien:
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WEBAPP_STATIC_DIR = os.path.join(BASE_DIR, "../webapp/static")
+
+# Mounte die statischen Dateien unter "/static"
+app.mount("/static", StaticFiles(directory=WEBAPP_STATIC_DIR, html = True), name="styles.css")
+
+
+# Liefere index.html an der Root-URL aus:
+@app.get("/api/sequences", response_class=HTMLResponse, summary="Startseite der Web-UI")
+def read_index():
+    index_path = os.path.join(WEBAPP_STATIC_DIR, "index.html")
+    with open(index_path, encoding="utf-8") as f:
+        return f.read()
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -61,13 +81,13 @@ def _get_sequence(name: str):
 GetSequence = Annotated[FireworkSequence, Depends(_get_sequence)]
 
 
-@app.get("/", summary="Gibt eine Liste aller Feuerwerk-Sequenzen zurück.")
+@app.get("/api/sequences", summary="Gibt eine Liste aller Feuerwerk-Sequenzen zurück.")
 def get_all_sequences() -> list[FireworkSequence]:
     return list(sequence_store.values())
 
 
 @app.post(
-    "/",
+    "/api/sequences",
     summary="Erstellt eine Feuerwerk-Sequenz.",
     description="Der Sequenz-Name muss als Parameter übergeben werden und eindeutig sein.",
     responses={403: {"description": "Sequenz-Name exsistiert bereits."}},
@@ -79,7 +99,7 @@ def create_sequence(name: str) -> FireworkSequence:
     return sequence_store[name]
 
 
-@app.delete("/", summary="Setzt die Steuerung zurück (löscht alle Sequenzen).")
+@app.delete("/api/sequences", summary="Setzt die Steuerung zurück (löscht alle Sequenzen).")
 def reset():
     sequence_store.clear()
     current_stages["running"] = None
@@ -88,7 +108,7 @@ def reset():
 
 
 @app.get(
-    "/{name}",
+    "/api/sequences/{name}",
     summary="Gibt eine Sequenz zurück.",
     description="Der Sequenz-Name muss exsistieren.",
     responses={404: {"description": "Sequenz exsistiert nicht."}},
@@ -98,7 +118,7 @@ def get_sequence(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.delete(
-    "/{name}",
+    "/api/sequences/{name}",
     summary="Löscht eine Sequenz.",
     description="Der Sequenz-Name muss exsistieren.",
     responses={404: {"description": "Sequenz exsistiert nicht."}},
@@ -111,7 +131,7 @@ def delete_sequence(name: str) -> FireworkSequence:
 
 
 @app.patch(
-    "/{name}/first_stage",
+    "/api/sequences/{name}/first_stage",
     summary="Aktiviere die erste Freigabe (Status: 'first_stage').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'saved' sein.'\n"
@@ -127,7 +147,7 @@ def sequence_to_first_stage(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.patch(
-    "/{name}/second_stage",
+    "/api/sequences/{name}/second_stage",
     summary="Aktiviere die zweite Freigabe (Status: 'second_stage').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'first_stage' sein.'\n"
@@ -143,7 +163,7 @@ def sequence_to_second_stage(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.patch(
-    "/{name}/running",
+    "/api/sequences/{name}/running",
     summary="Starte die Sequenz (Status: 'running').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'second_stage' sein.'\n"
@@ -159,7 +179,7 @@ def sequence_to_running(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.patch(
-    "/{name}/pause",
+    "/api/sequences/{name}/pause",
     summary="Pausiere die Sequenz (Status: 'paused').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'running' sein.'\n"
@@ -178,7 +198,7 @@ def pause_sequence(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.patch(
-    "/{name}/resume",
+    "/api/sequences/{name}/resume",
     summary="Setzt die Sequenz fort (Status: 'running').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'paused' sein.'\n"
@@ -197,7 +217,7 @@ def resume_sequence(sequence: GetSequence) -> FireworkSequence:
 
 
 @app.post(
-    "/stop",
+    "/api/sequences/stop",
     summary="Stop die Sequenz (Status: 'stopped').",
     description="Der Sequenz-Name muss exsistieren.\n"
     "Die Sequenz muss im Status 'running' oder 'paused' sein.'",
@@ -210,3 +230,4 @@ def stop_sequence() -> None:
     if current_stages["running"] is not None:
         current_stages["running"].status = "stopped"
         current_stages["running"] = None
+

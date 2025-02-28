@@ -9,10 +9,10 @@
 // Konfiguration
 const CONFIG = {
     // ontime WebSocket-Verbindung
-    ONTIME_WS_URL: 'ws://localhost:4001', // Ontime WebSocket URL
+    ONTIME_WS_URL: 'ws://localhost:4001/ws', // Ontime WebSocket URL
     
     // Feuerwerkssteuerung HTTP-Schnittstelle
-    FIREWORKS_API_URL: 'http://localhost:8000', // URL zur Feuerwerkssteuerung
+    FIREWORKS_API_URL: 'http://localhost:8000/api', // URL zur Feuerwerkssteuerung
     
     // Aktualisierungsintervalle (in ms)
     UPDATE_INTERVAL: 1000, // Interval für Clock-Updates
@@ -137,7 +137,7 @@ function updateOntimeState(data) {
     if (data.rundownState) {
         // Aktuelles Event und Zeit
         currentEventId = data.rundownState.currentEventId || null;
-        
+
         // Verbleibende Zeit des aktuellen Events
         if (data.rundownState.currentEvent) {
             const remaining = data.rundownState.currentEvent.remainingTime || 0;
