@@ -1,0 +1,218 @@
+{
+  "rundown": [
+    {
+      "id": "count01",
+      "type": "event",
+      "title": "Countdown",
+      "timeStart": 72000000,
+      "timeEnd": 72060000,
+      "duration": 60000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "load-next",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Start Countdown",
+      "colour": "#FF0000",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "CD.01",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "Feuerwerkssequenz": "countdown",
+        "audioFile": "Audio1.mp3"
+      }
+    },
+    {
+      "id": "musik01",
+      "type": "event",
+      "title": "Musik 1",
+      "timeStart": 72060000,
+      "timeEnd": 72174000,
+      "duration": 114000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "none",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Erste Musiksequenz",
+      "colour": "#FFA500",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "FW.01",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "audioFile": "Audio1.mp3",
+        "Feuerwerkssequenz": "sequence1"
+      }
+    },
+    {
+      "id": "musik02",
+      "type": "event",
+      "title": "Musik 2",
+      "timeStart": 72240000,
+      "timeEnd": 72382000,
+      "duration": 142000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "none",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Zweite Musiksequenz",
+      "colour": "#FFFF00",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "FW.02",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "audioFile": "Audio2.mp3",
+        "Feuerwerkssequenz": "sequence2"
+      }
+    },
+    {
+      "id": "musik03",
+      "type": "event",
+      "title": "Musik 3",
+      "timeStart": 72480000,
+      "timeEnd": 72650000,
+      "duration": 170000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "none",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Dritte Musiksequenz",
+      "colour": "#00FF00",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "FW.03",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "audioFile": "Audio3.mp3",
+        "Feuerwerkssequenz": "sequence3"
+      }
+    },
+    {
+      "id": "musik04",
+      "type": "event",
+      "title": "Musik 4",
+      "timeStart": 72690000,
+      "timeEnd": 72832000,
+      "duration": 142000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "none",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Vierte Musiksequenz",
+      "colour": "#0000FF",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "FW.04",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "audioFile": "Audio4.mp3",
+        "Feuerwerkssequenz": "sequence4"
+      }
+    },
+    {
+      "id": "musik05",
+      "type": "event",
+      "title": "Finale",
+      "timeStart": 72960000,
+      "timeEnd": 73102000,
+      "duration": 142000,
+      "timeStrategy": "lock-duration",
+      "linkStart": null,
+      "endAction": "none",
+      "timerType": "count-down",
+      "countToEnd": false,
+      "isPublic": true,
+      "skip": false,
+      "note": "Finale",
+      "colour": "#800080",
+      "delay": 0,
+      "dayOffset": 0,
+      "gap": 0,
+      "cue": "FW.05",
+      "revision": 4,
+      "timeWarning": 30000,
+      "timeDanger": 10000,
+      "custom": {
+        "audioFile": "Audio4.mp3",
+        "Feuerwerkssequenz": "sequence5"
+      }
+    }
+  ],
+  "project": {
+    "title": "Feuerwerk Frühjahrsmesse Gießen",
+    "description": "Musikfeuerwerk für die Frühjahrsmesse Gießen",
+    "publicUrl": "",
+    "publicInfo": "Musikfeuerwerk Frühjahrsmesse 2025",
+    "backstageUrl": "",
+    "backstageInfo": "Feuerwerk und Musiksteuerung",
+    "projectLogo": null
+  },
+  "settings": {
+    "app": "ontime",
+    "version": "3.13.1",
+    "serverPort": 4001,
+    "editorKey": null,
+    "operatorKey": null,
+    "timeFormat": "24",
+    "language": "de"
+  },
+  "viewSettings": {
+    "dangerColor": "#ED3333",
+    "endMessage": "Feuerwerk beendet",
+    "freezeEnd": false,
+    "normalColor": "#ffffffcc",
+    "overrideStyles": false,
+    "warningColor": "#FFAB33"
+  },
+  "urlPresets": [],
+  "customFields": {
+    "Feuerwerkssequenz": {
+      "type": "string",
+      "colour": "#3E75E8",
+      "label": "Feuerwerkssequenz"
+    },
+    "audioFile": {
+      "label": "audioFile",
+      "type": "string",
+      "colour": ""
+    }
+  },
+  "automation": {
+    "enabledAutomations": true,
+    "enabledOscIn": true,
+    "oscPortIn": 4001,
+    "triggers": [],
+    "automations": {}
+  }
+}

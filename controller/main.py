@@ -2,164 +2,218 @@ import os
 import json
 import vlc
 import logging
-from pythonosc.dispatcher import Dispatcher
-from pythonosc.osc_server import BlockingOSCUDPServer
 import threading
-
+import requests
+import time
+from datetime import datetime
 
 # Logger konfigurieren
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
-logger = logging.getLogger("controller")
+logger = logging.getLogger("audio-controller")
 
 # Dynamische Pfadkonfiguration
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-AUDIO_DIR = os.path.join(BASE_DIR, "../audio")
-MAPPING_FILE = os.path.join(BASE_DIR, "event_mapping.json")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+AUDIO_DIR = os.path.join(BASE_DIR, "audio")
+MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "event_mapping.json")
+
+# Konfiguration für ontime API
+ONTIME_API_URL = "http://localhost:4001/api"
+POLL_INTERVAL = 0.5  # Abfrageintervall in Sekunden
 
 # Globale Variablen zur Zustandsverwaltung
-current_media = None   # Speichert den Namen der aktuell abgespielten Audiodatei
-paused_time = {}     # Speichert den Zeitpunkt (in ms), an dem pausiert wurde
-
-# Event-Mapping laden
-def load_event_mapping():
-    """Lädt das Event-Mapping aus einer JSON-Datei."""
-    if not os.path.exists(MAPPING_FILE):
-        logger.error("Event-Mapping-Datei nicht gefunden.")
-        return {}
-    try:
-        with open(MAPPING_FILE, "r") as file:
-            return json.load(file)
-    except Exception as e:
-        logger.error(f"Fehler beim Laden des Event-Mappings: {e}")
-        return {}
-    
-EVENT_MAPPING = load_event_mapping()
+current_event_index = None  # Statt Event-ID verwenden wir den Index
+current_playback_state = None  # 'play', 'pause', 'stop'
+player = None
+audio_files = {}  # Mapping zwischen Event-Index und Audiodatei
 
 # VLC-Instanz erstellen
-vlc_instance = vlc.Instance("--verbose=0")
-player = vlc_instance.media_player_new()
+def initialize_vlc():
+    """Initialisiert die VLC-Instanz und gibt den Player zurück."""
+    vlc_instance = vlc.Instance("--verbose=0")
+    return vlc_instance.media_player_new()
+
+# Audio-Mapping erstellen
+def create_audio_mapping():
+    """Erstellt ein Mapping zwischen Event-Indizes und Audiodateien."""
+    # In diesem einfachen Beispiel ordnen wir Audiodateien direkt den Indizes zu
+    mapping = {
+        0: None,  # Countdown (kein Audio)
+        1: "Audio1.mp3",
+        2: "Audio2.mp3",
+        3: "Audio3.mp3",
+        4: "Audio4.mp3",
+        5: "Audio5.mp3"
+    }
+    
+    logger.info(f"Audio-Mapping erstellt: {mapping}")
+    return mapping
 
 # Audio-Funktionen
-def play_audio(event_id):
-    """Spielt die angegebene Audiodatei mit VLC ab."""
-    global current_media, paused_time
-
-    event_title = EVENT_MAPPING.get(event_id)
-   
-    if event_title == "countdown":
-        logger.info("Countdown wird gestartet.")
-        return
-
-    if not event_title:
-        logger.error(f"Event-ID {event_id} nicht gefunden.")
-        return 
+def play_audio(event_index):
+    """Spielt die zum Event passende Audiodatei ab."""
+    global current_event_index, player
     
-    audio_path = os.path.abspath(os.path.join(AUDIO_DIR, f"{event_title}.mp3"))
-
-    if not os.path.exists(audio_path):
-        logger.error(f"Datei nicht gefunden: {audio_path}")
+    # Wenn es der Countdown ist (Index 0), spielen wir kein Audio ab
+    if event_index == 0:
+        logger.info(f"Countdown (Index {event_index}) - kein Audio")
+        current_event_index = event_index
         return
-
+    
+    # Audiodatei basierend auf dem Event-Index ermitteln
+    audio_file = audio_files.get(event_index)
+    
+    if not audio_file:
+        logger.error(f"Keine Audio-Datei für Event-Index {event_index} gefunden.")
+        return
+    
+    # Pfad zur Audiodatei
+    audio_path = os.path.join(AUDIO_DIR, audio_file)
+    
+    if not os.path.exists(audio_path):
+        logger.error(f"Audiodatei nicht gefunden: {audio_path}")
+        return
+    
+    # VLC-Instance erstellen, falls noch nicht vorhanden
+    if player is None:
+        player = initialize_vlc()
+    
+    # Neue Media-Instance erstellen
+    vlc_instance = vlc.Instance()
     media = vlc_instance.media_new(audio_path)
-    media.add_option(":no-video")  # Deaktiviert Videoverarbeitung
-    media.add_option(":demux=mp3")   # Erzwinge MP3-Demuxer
-    media.add_option(":file-caching=1000")  # Puffereinstellungen
-    media.add_option(":audio-time-stretch")  # Aktiviert Zeitstreckung für eine bessere Synchronisation
-    media.add_option(":clock-jitter=0")  # Reduziert Timing-Probleme
     player.set_media(media)
-
-    # Eventuell pausiertes Audio fortsetzen
-    if event_id in paused_time:
-        resume_time = paused_time.pop(event_id) # Zeitpunkt aus Dictionary entfernen
-        player.play()  # Wiedergabe starten
-        player.set_time(resume_time)    # Zeitpunkt setzen
-        logger.info(f"Fortsetzen von {event_title}.")
-    else:
-        logger.info(f"Starte {event_title}.")
-        player.play()
-
-    current_media = event_id  # Aktuellen Eventnamen speichern
-
+    
+    # Audio abspielen
+    player.play()
+    logger.info(f"Starte Audio {audio_file} für Event-Index {event_index}")
+    
+    current_event_index = event_index
 
 def pause_audio():
-    """Pausiert die Wiedergabe und speichert die aktuelle Wiedergabezeit."""
-    global paused_time, current_media
-    if current_media:
-        try:
-            paused_time[current_media] = player.get_time() # Zeitpunkt speichern
-            player.pause()
-            logger.info(f"Audio pausiert.")
-        except Exception as e:
-            logger.error(f"Fehler beim Pausieren: {e}")
+    """Pausiert die aktuelle Audiowiedergabe."""
+    global player
+    
+    if player and player.is_playing():
+        player.pause()
+        logger.info("Audio pausiert")
+    else:
+        logger.info("Kein Audio zum Pausieren oder bereits pausiert")
 
+def resume_audio():
+    """Setzt pausierte Audiowiedergabe fort."""
+    global player
+    
+    if player:
+        player.play()
+        logger.info("Audio fortgesetzt")
+    else:
+        logger.info("Kein Audio zum Fortsetzen")
 
 def stop_audio():
-    """Stoppt die Wiedergabe."""
-    global current_media
-    player.stop()
-    if current_media in paused_time:
-        del paused_time[current_media]  # Pausierte Zeit löschen
-    logger.info("Audio gestoppt.")
-    current_media = None
-
-# OSC-Handler
-def handle_start_event(address, *args):
-    """OSC-Handler für Start-Events. Falls Event pausiert war, wird es fortgesetzt."""
-    global current_media
-    event_id = str(args[0])
-    event_title = EVENT_MAPPING.get(event_id)
-
-    if not event_title:
-        logger.error(f"Unbekannte Event-ID: {event_id}")
-        return
-
-    current_media = event_id
-
-    if event_title == "countdown":
-        logger.info("Countdown gestartet.")
-    else:
-        logger.info(f"Event '{event_title}' gestartet.")
-        play_audio(event_id)
+    """Stoppt die Audiowiedergabe."""
+    global player, current_event_index
     
+    if player:
+        player.stop()
+        logger.info("Audio gestoppt")
+    
+    current_event_index = None
 
-def handle_stop_event(address, *args):
-    """OSC-Handler für Stop-Events."""
-    logger.info("Event gestoppt.")
-    stop_audio()
+# Ontime HTTP API-Funktionen
+def poll_ontime_status():
+    """Fragt den aktuellen Status von ontime ab."""
+    try:
+        response = requests.get(f"{ONTIME_API_URL}/poll")
+        if response.status_code == 200 or response.status_code == 202:
+            data = response.json()
+            if "payload" in data:
+                return data["payload"]
+        return None
+    except requests.RequestException as e:
+        logger.error(f"Fehler beim Abfragen des ontime-Status: {e}")
+        return None
 
-def handle_pause_event(address, *args):
-    """OSC-Handler für Pause-Events."""
-    logger.info("Event pausiert.")
-    pause_audio()
-
-def debug_handler(address, *args):
-    logger.info(f"Empfangene Nachricht: {address} mit Argumenten {args}")
-
-# OSC-Server einrichten
-def start_osc_server():
-    """Startet den OSC-Server zum Empfangen von Nachrichten."""
-    dispatcher = Dispatcher()
-    dispatcher.map("/start", handle_start_event)
-    dispatcher.map("/stop", handle_stop_event)
-    dispatcher.map("/pause", handle_pause_event)
-
-    # Debugging für alle OSC-Nachrichten
-    dispatcher.set_default_handler(debug_handler)
-
-    server = BlockingOSCUDPServer(("127.0.0.1", 9999), dispatcher)
-    logger.info("OSC-Server läuft...")
-    server.serve_forever()
-
+def check_for_events():
+    """Überwacht den ontime-Status und reagiert auf Änderungen."""
+    global current_event_index, current_playback_state
+    
+    while True:
+        try:
+            status = poll_ontime_status()
+            
+            if status:
+                # Wir verwenden den selectedEventIndex statt einer Event-ID
+                new_event_index = status.get("runtime", {}).get("selectedEventIndex")
+                new_playback_state = status.get("timer", {}).get("playback")
+                
+                logger.debug(f"Status: Index={new_event_index}, Playback={new_playback_state}")
+                
+                # Auf Änderungen im Event-Index reagieren
+                if new_event_index is not None and new_event_index != current_event_index:
+                    logger.info(f"Neues Event erkannt: Index {new_event_index}")
+                    
+                    # Altes Audio stoppen, falls eins läuft
+                    if current_event_index is not None:
+                        stop_audio()
+                    
+                    # Neues Audio starten, wenn der Playback-Status "play" ist
+                    if new_playback_state == "play":
+                        play_audio(new_event_index)
+                    
+                    current_event_index = new_event_index
+                
+                # Auf Änderungen im Playback-Status reagieren
+                if new_playback_state != current_playback_state:
+                    logger.info(f"Playback-Status geändert: {current_playback_state} -> {new_playback_state}")
+                    
+                    if new_playback_state == "play" and current_playback_state == "pause":
+                        # Event wurde fortgesetzt
+                        resume_audio()
+                    elif new_playback_state == "pause":
+                        # Event wurde pausiert
+                        pause_audio()
+                    elif new_playback_state == "stop":
+                        # Event wurde gestoppt
+                        stop_audio()
+                    
+                    current_playback_state = new_playback_state
+        
+        except Exception as e:
+            logger.error(f"Fehler beim Überwachen des ontime-Status: {e}")
+        
+        # Kurze Pause vor der nächsten Abfrage
+        time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
-    # Startet den OSC-Server in einem separaten Thread
-    osc_thread = threading.Thread(target=start_osc_server, daemon=True)
-    osc_thread.start()
-
-    # Halte das Hauptprogramm aktiv (hier könntest du z.B. threading.Event().wait() verwenden)
+    # Überprüfe Audio-Verzeichnis
+    if not os.path.exists(AUDIO_DIR):
+        logger.warning(f"Audio-Verzeichnis nicht gefunden: {AUDIO_DIR}")
+        # Versuche, das Verzeichnis zu erstellen
+        try:
+            os.makedirs(AUDIO_DIR)
+            logger.info(f"Audio-Verzeichnis erstellt: {AUDIO_DIR}")
+        except Exception as e:
+            logger.error(f"Fehler beim Erstellen des Audio-Verzeichnisses: {e}")
+    else:
+        logger.info(f"Audio-Verzeichnis gefunden: {AUDIO_DIR}")
+        # Liste alle MP3-Dateien im Audio-Verzeichnis auf
+        found_files = [f for f in os.listdir(AUDIO_DIR) if f.endswith(".mp3")]
+        logger.info(f"Gefundene Audiodateien: {found_files}")
+    
+    # Audio-Mapping erstellen
+    audio_files = create_audio_mapping()
+    
+    # Starte die Überwachung der ontime-Events in einem separaten Thread
+    logger.info("Starte Audio-Controller...")
+    polling_thread = threading.Thread(target=check_for_events, daemon=True)
+    polling_thread.start()
+    
+    # Hauptprogramm aktiv halten
     try:
+        print("Audio-Controller läuft! Drücken Sie Strg+C zum Beenden...")
         while True:
-            pass
+            time.sleep(1)
     except KeyboardInterrupt:
-        logger.info("Programm beendet.")
-        stop_audio()
+        pass
+    
+    logger.info("Audio-Controller wird beendet.")
+    stop_audio()

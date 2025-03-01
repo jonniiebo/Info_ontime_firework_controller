@@ -3,66 +3,59 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gießen Frühjahrsmesse - Musikfeuerwerk</title>
+    <title>Feuerwerk Monitoring</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
     <div class="container">
         <header>
-            <div class="logo">
-                <h1>Gießen Frühjahrsmesse</h1>
-                <h2>Musikfeuerwerk Kontrolle</h2>
-            </div>
+            <h1>Feuerwerk Frühjahrsmesse Gießen</h1>
             <div class="current-time" id="current-time">00:00:00</div>
         </header>
 
-        <main>
-            <div class="dashboard">
-                <section class="event-section">
-                    <h3>Events</h3>
-                    <div class="event-info">
-                        <div class="current-event">
-                            <h4>Aktuelles Event</h4>
-                            <div id="current-event-name">-</div>
-                            <div id="current-event-time">Restzeit: 00:00</div>
-                        </div>
-                        <div class="next-event">
-                            <h4>Nächstes Event</h4>
-                            <div id="next-event-name">-</div>
-                        </div>
+        <div class="dashboard">
+            <div class="left-panel">
+                <div class="section event-list-section">
+                    <h2>Events</h2>
+                    <div class="event-list" id="event-list">
+                        <!-- Events werden dynamisch eingefügt -->
                     </div>
-                    <div class="event-list-container">
-                        <ul id="event-list" class="event-list">
-                            <!-- Events werden hier dynamisch eingefügt -->
-                        </ul>
-                    </div>
-                </section>
-
-                <section class="firework-section">
-                    <h3>Feuerwerkssteuerung</h3>
-                    <div class="sequences-container">
-                        <ul id="sequences-list" class="sequences-list">
-                            <!-- Sequenzen werden hier dynamisch eingefügt -->
-                        </ul>
-                    </div>
-                    <div class="emergency-stop">
-                        <button id="emergency-stop-btn" class="emergency-btn">NOTAUS</button>
-                    </div>
-                </section>
+                </div>
             </div>
 
-            <section class="messages-section">
-                <h3>Systemmeldungen</h3>
-                <div class="messages-container">
-                    <ul id="messages-list" class="messages-list">
-                    </ul>
+            <div class="right-panel">
+                <div class="section current-event-section">
+                    <h2>Aktuelles Event</h2>
+                    <div class="current-event" id="current-event">
+                        <div class="event-title">-</div>
+                        <div class="event-time-container">
+                            <div class="event-time-label">Verbleibende Zeit:</div>
+                            <div class="event-time" id="event-remaining-time">--:--</div>
+                        </div>
+                        <div class="event-status" id="event-status">Nicht aktiv</div>
+                    </div>
                 </div>
-            </section>
-        </main>
 
-        <footer>
-            <p>TH Mittelhessen - FB MuK | Wintersemester 2024/2025</p>
-        </footer>
+                <div class="section firework-section">
+                    <h2>Feuerwerkssteuerung</h2>
+                    <div class="firework-status" id="firework-status">
+                        <!-- Feuerwerk-Sequenzen werden dynamisch eingefügt -->
+                    </div>
+                </div>
+
+                <div class="section emergency-section">
+                    <button id="emergency-button" class="emergency-button">NOTAUS</button>
+                    <div class="emergency-info">Stoppt sofort alle laufenden Abläufe</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="messages-section">
+            <h2>Systemmeldungen</h2>
+            <div class="message-list" id="message-list">
+                <!-- Meldungen werden dynamisch eingefügt -->
+            </div>
+        </div>
     </div>
 
     <script src="app.js"></script>

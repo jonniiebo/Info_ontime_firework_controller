@@ -1,865 +1,526 @@
-/**
- * Musikfeuerwerk Webapp
- * TH Mittelhessen - FB MuK - Wintersemester 2024/2025
- * 
- * Diese Webapp dient zur Überwachung und Steuerung des Musikfeuerwerks
- * und kommuniziert mit ontime über WebSockets und mit der Feuerwerkssteuerung über HTTP.
- */
-
 // Konfiguration
-const CONFIG = {
-    // ontime WebSocket-Verbindung
-    ONTIME_WS_URL: 'ws://localhost:4001', // Ontime WebSocket URL
-    
-    // Feuerwerkssteuerung HTTP-Schnittstelle
-    FIREWORKS_API_URL: 'http://localhost:8000', // URL zur Feuerwerkssteuerung
-    
-    // Aktualisierungsintervalle (in ms)
-    UPDATE_INTERVAL: 1000, // Interval für Clock-Updates
-    FIREWORKS_POLL_INTERVAL: 2000, // Interval für Feuerwerkssequenz-Updates
+const config = {
+    ontimeWsUrl: 'ws://localhost:4001/ws', // Korrigierte WebSocket-URL für ontime
+    fireworkApiUrl: 'http://localhost:8000', // HTTP-API-URL für die Feuerwerkssteuerung
+    pollInterval: 2000, // Abfrageintervall für Firewerk-API in ms
+    reconnectInterval: 5000 // Intervall für WebSocket-Wiederverbindungsversuche in ms
 };
 
-// Globale Variablen
-let ontimeWebSocket = null;
-let eventsList = [];
-let currentEventId = null;
-let messagesList = [];
-let fireworkSequences = [];
-
-// DOM Elements
+// DOM-Elemente
 const elements = {
     currentTime: document.getElementById('current-time'),
-    currentEventName: document.getElementById('current-event-name'),
-    currentEventTime: document.getElementById('current-event-time'),
-    nextEventName: document.getElementById('next-event-name'),
     eventList: document.getElementById('event-list'),
-    sequencesList: document.getElementById('sequences-list'),
-    messagesList: document.getElementById('messages-list'),
-    emergencyStopBtn: document.getElementById('emergency-stop-btn'),
-    // Neue DOM-Elemente (werden in der initUI-Funktion später hinzugefügt)
-    sequenceNameInput: null,
-    createSequenceBtn: null,
-    resetAllBtn: null,
-    sequenceActionsContainer: null
+    currentEvent: document.getElementById('current-event'),
+    eventRemainingTime: document.getElementById('event-remaining-time'),
+    eventStatus: document.getElementById('event-status'),
+    fireworkStatus: document.getElementById('firework-status'),
+    emergencyButton: document.getElementById('emergency-button'),
+    messageList: document.getElementById('message-list')
 };
 
-// ==========================================
-// Hilfsfunktionen für Formatierungen
-// ==========================================
+// Globale Zustandsvariablen
+let state = {
+    ontime: {
+        events: [],
+        currentEventId: null,
+        currentEventIndex: null,
+        nextEventId: null,
+        playbackState: null,
+        timeRemaining: 0
+    },
+    firework: {
+        sequences: []
+    },
+    messages: [],
+    websocket: null,
+    websocketConnected: false
+};
 
-/**
- * Formatiert eine Zeitangabe in HH:MM:SS
- */
-function formatTime(date) {
-    return date.toLocaleTimeString('de-DE', {
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false
-    });
+// Aktualisiere die Uhrzeit
+function updateClock() {
+    const now = new Date();
+    elements.currentTime.textContent = now.toLocaleTimeString('de-DE');
 }
 
-/**
- * Formatiert eine Dauer in Minuten und Sekunden (MM:SS)
- */
-function formatDuration(durationInMs) {
-    if (durationInMs <= 0) return '00:00';
-    
-    const totalSeconds = Math.floor(durationInMs / 1000);
-    const minutes = Math.floor(totalSeconds / 60);
-    const seconds = totalSeconds % 60;
-    
-    return `${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`;
+// Initialisiere die Uhrzeit und aktualisiere sie jede Sekunde
+function initClock() {
+    updateClock();
+    setInterval(updateClock, 1000);
 }
 
-/**
- * Erzeugt einen Status-Tag mit entsprechender Farbe
- */
-function createStatusTag(status) {
-    return `<span class="status-tag status-${status}">${status}</span>`;
-}
-
-
-function initOntimeWebSocket() {
-    ontimeWebSocket = new WebSocket(CONFIG.ONTIME_WS_URL);
-    
-    ontimeWebSocket.onopen = () => {
-        console.log('WebSocket-Verbindung zu ontime hergestellt');
-        addMessage('info', 'Verbindung zu ontime hergestellt');
-    };
-    
-    ontimeWebSocket.onclose = () => {
-        console.log('WebSocket-Verbindung zu ontime geschlossen');
-        addMessage('warning', 'Verbindung zu ontime unterbrochen');
-        
-        // Automatischer Wiederverbindungsversuch nach 5 Sekunden
-        setTimeout(initOntimeWebSocket, 5000);
-    };
-    
-    ontimeWebSocket.onerror = (error) => {
-        console.error('WebSocket Fehler:', error);
-        addMessage('error', 'WebSocket-Fehler: Verbindung zu ontime fehlgeschlagen');
-    };
-    
-    ontimeWebSocket.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleOntimeMessage(data);
-        } catch (error) {
-            console.error('Fehler beim Verarbeiten der WebSocket-Nachricht:', error);
-        }
-    };
-}
-
-/**
- * Verarbeitet eingehende WebSocket-Nachrichten von ontime
- */
-function handleOntimeMessage(data) {
-    // Verarbeite verschiedene Nachrichtentypen von ontime
-    if (data.type === 'state') {
-        // Aktuellen Zustand verarbeiten (Events, aktuelles Event, etc.)
-        updateOntimeState(data);
-    } else if (data.type === 'externalMessage') {
-        // Externe Nachricht von anderen Systemen (z.B. Fehler vom Feuerwerk)
-        addMessage('error', data.message);
-    }
-}
-
-/**
- * Aktualisiert den Zustand basierend auf ontime-Daten
- */
-function updateOntimeState(data) {
-    if (data.events) {
-        eventsList = data.events;
-        renderEventsList();
-    }
-    
-    if (data.rundownState) {
-        // Aktuelles Event und Zeit
-        currentEventId = data.rundownState.currentEventId || null;
-        
-        // Verbleibende Zeit des aktuellen Events
-        if (data.rundownState.currentEvent) {
-            const remaining = data.rundownState.currentEvent.remainingTime || 0;
-            elements.currentEventTime.textContent = `Restzeit: ${formatDuration(remaining)}`;
-            
-            // Automatisch die Feuerwerkssequenz für das Event erstellen, falls nicht vorhanden
-            const currentEvent = data.rundownState.currentEvent;
-            if (currentEvent && currentEvent.title) {
-                const eventTitle = currentEvent.title;
-                if (!fireworkSequences.some(seq => seq.name === eventTitle)) {
-                    maybeCreateSequenceForEvent(eventTitle);
-                }
-            }
-        } else {
-            elements.currentEventTime.textContent = 'Restzeit: --:--';
-        }
-        
-        updateCurrentAndNextEvent();
-    }
-}
-
-/**
- * Prüft, ob eine Sequenz für ein Event erstellt werden sollte und erstellt sie, falls nötig
- */
-async function maybeCreateSequenceForEvent(eventTitle) {
-    // Prüfen, ob bereits eine Sequenz mit diesem Namen existiert
-    const existingSequence = fireworkSequences.find(seq => seq.name === eventTitle);
-    if (!existingSequence) {
-        try {
-            await createSequence(eventTitle);
-        } catch (error) {
-            console.error(`Fehler beim automatischen Erstellen der Sequenz für ${eventTitle}:`, error);
-        }
-    }
-}
-
-/**
- * Aktualisiert die Anzeige des aktuellen und nächsten Events
- */
-function updateCurrentAndNextEvent() {
-    let currentEvent = null;
-    let nextEvent = null;
-    
-    // Finde aktuelles und nächstes Event
-    for (let i = 0; i < eventsList.length; i++) {
-        if (eventsList[i].id === currentEventId) {
-            currentEvent = eventsList[i];
-            if (i + 1 < eventsList.length) {
-                nextEvent = eventsList[i + 1];
-            }
-            break;
-        }
-    }
-    
-    // Aktuelles Event anzeigen
-    if (currentEvent) {
-        elements.currentEventName.textContent = currentEvent.title || currentEvent.id;
-    } else {
-        elements.currentEventName.textContent = '-';
-    }
-    
-    // Nächstes Event anzeigen
-    if (nextEvent) {
-        elements.nextEventName.textContent = nextEvent.title || nextEvent.id;
-    } else {
-        elements.nextEventName.textContent = '-';
-    }
-    
-    // Events-Liste aktualisieren
-    renderEventsList();
-}
-
-/**
- * Rendert die Liste aller Events
- */
-function renderEventsList() {
+// Event-Liste aktualisieren
+function updateEventList() {
     elements.eventList.innerHTML = '';
     
-    eventsList.forEach(event => {
-        const li = document.createElement('li');
-        
-        // Aktuelles oder nächstes Event markieren
-        if (event.id === currentEventId) {
-            li.classList.add('current');
-        } else if (eventsList.indexOf(event) === eventsList.findIndex(e => e.id === currentEventId) + 1) {
-            li.classList.add('next');
-        }
-        
-        li.innerHTML = `
-            <span>${event.title || event.id}</span>
-            <span>${event.duration ? formatDuration(event.duration) : '--:--'}</span>
-        `;
-        
-        elements.eventList.appendChild(li);
-    });
-}
-
-/**
- * Sendet eine externe Nachricht an ontime
- */
-function sendMessageToOntime(message, level = 'info') {
-    if (ontimeWebSocket && ontimeWebSocket.readyState === WebSocket.OPEN) {
-        const data = {
-            type: 'externalMessage',
-            message: message,
-            level: level
-        };
-        
-        ontimeWebSocket.send(JSON.stringify(data));
-    } else {
-        console.error('WebSocket nicht verbunden, kann Nachricht nicht senden');
-    }
-}
-
-// ==========================================
-// Feuerwerkssteuerung API
-// ==========================================
-
-/**
- * Ruft die aktuellen Feuerwerkssequenzen von der API ab
- */
-async function fetchFireworkSequences() {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/`);
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        const sequences = await response.json();
-        fireworkSequences = sequences;
-        renderSequencesList();
-        
-    } catch (error) {
-        console.error('Fehler beim Abrufen der Feuerwerkssequenzen:', error);
-        addMessage('error', `Feuerwerkssteuerung nicht erreichbar: ${error.message}`);
-    }
-}
-
-/**
- * Erstellt eine neue Feuerwerkssequenz
- */
-async function createSequence(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/?name=${encodeURIComponent(name)}`, {
-            method: 'POST'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        const newSequence = await response.json();
-        addMessage('info', `Neue Sequenz "${name}" erstellt`);
-        fetchFireworkSequences(); // Aktualisiere die Liste
-        
-        return newSequence;
-    } catch (error) {
-        console.error('Fehler beim Erstellen der Sequenz:', error);
-        addMessage('error', `Sequenzerstellung fehlgeschlagen: ${error.message}`);
-        throw error;
-    }
-}
-
-/**
- * Löscht eine Feuerwerkssequenz
- */
-async function deleteSequence(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('info', `Sequenz "${name}" gelöscht`);
-        fetchFireworkSequences();
-    } catch (error) {
-        console.error('Fehler beim Löschen der Sequenz:', error);
-        addMessage('error', `Sequenzlöschung fehlgeschlagen: ${error.message}`);
-    }
-}
-
-/**
- * Setzt den Status einer Sequenz auf "first_stage"
- */
-async function setSequenceToFirstStage(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}/first_stage`, {
-            method: 'PATCH'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('info', `Erste Freigabe für "${name}" aktiviert`);
-        fetchFireworkSequences();
-        
-        // Warnung an ontime senden (30 Sekunden vor Start)
-        sendMessageToOntime(`Erste Freigabe für "${name}" aktiviert (30 Sekunden verbleibend)`, 'warning');
-    } catch (error) {
-        console.error('Fehler bei der ersten Freigabe:', error);
-        addMessage('error', `Erste Freigabe fehlgeschlagen: ${error.message}`);
-        sendMessageToOntime(`Erste Freigabe für "${name}" fehlgeschlagen: ${error.message}`, 'error');
-    }
-}
-
-/**
- * Setzt den Status einer Sequenz auf "second_stage"
- */
-async function setSequenceToSecondStage(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}/second_stage`, {
-            method: 'PATCH'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('warning', `Zweite Freigabe für "${name}" aktiviert`);
-        fetchFireworkSequences();
-        
-        // Warnung an ontime senden (10 Sekunden vor Start)
-        sendMessageToOntime(`Zweite Freigabe für "${name}" aktiviert (10 Sekunden verbleibend)`, 'danger');
-    } catch (error) {
-        console.error('Fehler bei der zweiten Freigabe:', error);
-        addMessage('error', `Zweite Freigabe fehlgeschlagen: ${error.message}`);
-        sendMessageToOntime(`Zweite Freigabe für "${name}" fehlgeschlagen: ${error.message}`, 'error');
-    }
-}
-
-/**
- * Startet eine Sequenz (setzt den Status auf "running")
- */
-async function startSequence(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}/running`, {
-            method: 'PATCH'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('success', `Sequenz "${name}" gestartet`);
-        fetchFireworkSequences();
-    } catch (error) {
-        console.error('Fehler beim Starten der Sequenz:', error);
-        addMessage('error', `Sequenzstart fehlgeschlagen: ${error.message}`);
-        sendMessageToOntime(`Fehler beim Starten der Sequenz "${name}": ${error.message}`, 'error');
-    }
-}
-
-/**
- * Pausiert eine Sequenz
- */
-async function pauseSequence(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}/pause`, {
-            method: 'PATCH'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('info', `Sequenz "${name}" pausiert`);
-        fetchFireworkSequences();
-    } catch (error) {
-        console.error('Fehler beim Pausieren der Sequenz:', error);
-        addMessage('error', `Sequenzpause fehlgeschlagen: ${error.message}`);
-        sendMessageToOntime(`Fehler beim Pausieren der Sequenz "${name}": ${error.message}`, 'error');
-    }
-}
-
-/**
- * Setzt eine pausierte Sequenz fort
- */
-async function resumeSequence(name) {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/${encodeURIComponent(name)}/resume`, {
-            method: 'PATCH'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('success', `Sequenz "${name}" fortgesetzt`);
-        fetchFireworkSequences();
-    } catch (error) {
-        console.error('Fehler beim Fortsetzen der Sequenz:', error);
-        addMessage('error', `Sequenzfortsetzung fehlgeschlagen: ${error.message}`);
-        sendMessageToOntime(`Fehler beim Fortsetzen der Sequenz "${name}": ${error.message}`, 'error');
-    }
-}
-
-/**
- * Führt einen Notaus aus, indem alle laufenden Feuerwerkssequenzen gestoppt werden
- */
-async function executeEmergencyStop() {
-    try {
-        addMessage('warning', 'NOTAUS ausgelöst!');
-        
-        // Sende Stopp-Befehl an die Feuerwerkssteuerung
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/stop`, {
-            method: 'POST'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        // Sende Pause-Signal an ontime
-        if (ontimeWebSocket && ontimeWebSocket.readyState === WebSocket.OPEN) {
-            const data = {
-                type: 'rundownControl',
-                action: 'pause'
-            };
-            
-            ontimeWebSocket.send(JSON.stringify(data));
-        }
-        
-        // Aktualisiere die Sequenzliste
-        fetchFireworkSequences();
-        
-        // Benachrichtigung an alle Systeme
-        sendMessageToOntime('NOTAUS wurde ausgelöst! Alle Sequenzen wurden gestoppt.', 'danger');
-        
-    } catch (error) {
-        console.error('Fehler beim Ausführen des Notaus:', error);
-        addMessage('error', `Notaus fehlgeschlagen: ${error.message}`);
-        
-        // Sende Fehler an ontime
-        sendMessageToOntime(`Notaus fehlgeschlagen: ${error.message}`, 'error');
-    }
-}
-
-/**
- * Setzt das gesamte System zurück (löscht alle Sequenzen)
- */
-async function resetSystem() {
-    try {
-        const response = await fetch(`${CONFIG.FIREWORKS_API_URL}/`, {
-            method: 'DELETE'
-        });
-        
-        if (!response.ok) {
-            throw new Error(`HTTP Fehler: ${response.status}`);
-        }
-        
-        addMessage('warning', 'System zurückgesetzt - alle Sequenzen gelöscht');
-        fetchFireworkSequences();
-        
-        // Benachrichtigung an alle Systeme
-        sendMessageToOntime('Feuerwerkssteuerung wurde zurückgesetzt', 'warning');
-    } catch (error) {
-        console.error('Fehler beim Zurücksetzen des Systems:', error);
-        addMessage('error', `System-Reset fehlgeschlagen: ${error.message}`);
-    }
-}
-
-/**
- * Rendert die Liste der Feuerwerkssequenzen
- * Fügt für jede Sequenz Aktionsbuttons hinzu, abhängig vom aktuellen Status
- */
-function renderSequencesList() {
-    elements.sequencesList.innerHTML = '';
-    
-    if (fireworkSequences.length === 0) {
-        const li = document.createElement('li');
-        li.textContent = 'Keine Sequenzen verfügbar';
-        elements.sequencesList.appendChild(li);
+    if (state.ontime.events.length === 0) {
+        const noEvents = document.createElement('div');
+        noEvents.textContent = 'Keine Events verfügbar.';
+        elements.eventList.appendChild(noEvents);
         return;
     }
     
-    fireworkSequences.forEach(sequence => {
-        const li = document.createElement('li');
+    state.ontime.events.forEach((event, index) => {
+        const eventItem = document.createElement('div');
+        eventItem.className = 'event-item';
         
-        // Erstelle den Basiseintrag
-        li.innerHTML = `
-            <div class="sequence-info">
-                <span class="sequence-name">${sequence.name}</span>
-                ${createStatusTag(sequence.status)}
-            </div>
-            <div class="sequence-actions" data-sequence="${sequence.name}">
-                <!-- Aktionsbuttons werden dynamisch erstellt -->
-            </div>
-        `;
+        // Markiere das aktuelle und nächste Event
+        if (state.ontime.currentEventIndex === index) {
+            eventItem.classList.add('active');
+        } else if (state.ontime.currentEventIndex + 1 === index) {
+            eventItem.classList.add('next');
+        }
         
-        elements.sequencesList.appendChild(li);
+        const eventName = document.createElement('div');
+        eventName.className = 'event-name';
+        eventName.textContent = event.title;
         
-        // Aktionsbuttons basierend auf dem Status hinzufügen
-        const actionsContainer = li.querySelector('.sequence-actions');
-        addSequenceActionButtons(actionsContainer, sequence);
+        const eventDuration = document.createElement('div');
+        eventDuration.className = 'event-duration';
+        const duration = Math.round(event.duration / 1000);
+        const minutes = Math.floor(duration / 60);
+        const seconds = duration % 60;
+        eventDuration.textContent = `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
+        
+        eventItem.appendChild(eventName);
+        eventItem.appendChild(eventDuration);
+        elements.eventList.appendChild(eventItem);
     });
 }
 
-/**
- * Fügt die passenden Aktionsbuttons für eine Sequenz hinzu, abhängig vom Status
- */
-function addSequenceActionButtons(container, sequence) {
-    // Alle vorherigen Buttons entfernen
-    container.innerHTML = '';
-    
-    const buttons = [];
-    
-    // Statusabhängige Buttons
-    switch (sequence.status) {
-        case 'saved':
-            buttons.push({
-                text: 'Erste Freigabe',
-                action: () => setSequenceToFirstStage(sequence.name),
-                class: 'btn-warning'
-            });
-            buttons.push({
-                text: 'Löschen',
-                action: () => deleteSequence(sequence.name),
-                class: 'btn-danger'
-            });
-            break;
-            
-        case 'first_stage':
-            buttons.push({
-                text: 'Zweite Freigabe',
-                action: () => setSequenceToSecondStage(sequence.name),
-                class: 'btn-warning'
-            });
-            break;
-            
-        case 'second_stage':
-            buttons.push({
-                text: 'Starten',
-                action: () => startSequence(sequence.name),
-                class: 'btn-success'
-            });
-            break;
-            
-        case 'running':
-            buttons.push({
-                text: 'Pausieren',
-                action: () => pauseSequence(sequence.name),
-                class: 'btn-info'
-            });
-            break;
-            
-        case 'paused':
-            buttons.push({
-                text: 'Fortsetzen',
-                action: () => resumeSequence(sequence.name),
-                class: 'btn-success'
-            });
-            break;
-    }
-    
-    // Buttons erstellen und zum Container hinzufügen
-    buttons.forEach(button => {
-        const btn = document.createElement('button');
-        btn.textContent = button.text;
-        btn.className = `btn ${button.class}`;
-        btn.addEventListener('click', button.action);
-        container.appendChild(btn);
-    });
-}
-
-// ==========================================
-// Nachrichten-System
-// ==========================================
-
-/**
- * Fügt eine neue Nachricht zur Liste hinzu
- */
-function addMessage(type, text) {
-    const timestamp = new Date();
-    messagesList.unshift({
-        type,
-        text,
-        timestamp
-    });
-    
-    // Begrenze die Anzahl der Nachrichten auf 50
-    if (messagesList.length > 50) {
-        messagesList.pop();
-    }
-    
-    renderMessagesList();
-}
-
-/**
- * Rendert die Nachrichtenliste
- */
-function renderMessagesList() {
-    elements.messagesList.innerHTML = '';
-    
-    messagesList.forEach(message => {
-        const li = document.createElement('li');
-        li.classList.add(`message-${message.type}`);
+// Aktuelles Event-Detail aktualisieren
+function updateCurrentEvent() {
+    if (state.ontime.currentEventIndex !== null && state.ontime.events.length > 0 && 
+        state.ontime.currentEventIndex < state.ontime.events.length) {
+        const currentEvent = state.ontime.events[state.ontime.currentEventIndex];
         
-        li.innerHTML = `
-            <span class="message-timestamp">${formatTime(message.timestamp)}</span>
-            <span class="message-text">${message.text}</span>
-        `;
+        // Event-Titel
+        const eventTitleElement = elements.currentEvent.querySelector('.event-title');
+        eventTitleElement.textContent = currentEvent.title;
         
-        elements.messagesList.appendChild(li);
-    });
-}
-
-// ==========================================
-// UI-Erweiterungen
-// ==========================================
-
-/**
- * Initialisiert zusätzliche UI-Elemente
- */
-function initUI() {
-    // Erstelle zusätzliche UI-Elemente für die Feuerwerkssteuerung
-    const fireworkSection = document.querySelector('.firework-section');
-    
-    // Sequenzerstellung
-    const sequenceCreation = document.createElement('div');
-    sequenceCreation.className = 'sequence-creation';
-    sequenceCreation.innerHTML = `
-        <h4>Neue Sequenz</h4>
-        <div class="sequence-form">
-            <input type="text" id="sequence-name-input" placeholder="Name der Sequenz">
-            <button id="create-sequence-btn" class="btn btn-primary">Erstellen</button>
-        </div>
-    `;
-    
-    fireworkSection.insertBefore(sequenceCreation, fireworkSection.firstChild);
-    
-    // System-Reset Button
-    const resetSection = document.createElement('div');
-    resetSection.className = 'reset-section';
-    resetSection.innerHTML = `
-        <button id="reset-all-btn" class="btn btn-secondary">System zurücksetzen</button>
-    `;
-    
-    // Füge das Reset-Element vor dem Notaus ein
-    const emergencyStop = document.querySelector('.emergency-stop');
-    fireworkSection.insertBefore(resetSection, emergencyStop);
-    
-    // DOM-Referenzen aktualisieren
-    elements.sequenceNameInput = document.getElementById('sequence-name-input');
-    elements.createSequenceBtn = document.getElementById('create-sequence-btn');
-    elements.resetAllBtn = document.getElementById('reset-all-btn');
-    
-    // Event-Listener für die neuen Elemente
-    elements.createSequenceBtn.addEventListener('click', handleCreateSequence);
-    elements.resetAllBtn.addEventListener('click', handleResetSystem);
-    
-    // Stil-Anpassungen für die neuen Elemente
-    const style = document.createElement('style');
-    style.textContent = `
-        .sequence-creation {
-            margin-bottom: 15px;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 8px;
+        // Verbleibende Zeit
+        const seconds = Math.round(state.ontime.timeRemaining / 1000);
+        const minutes = Math.floor(Math.abs(seconds) / 60);
+        const remainingSeconds = Math.abs(seconds) % 60;
+        elements.eventRemainingTime.textContent = 
+            `${seconds < 0 ? '-' : ''}${minutes}:${remainingSeconds < 10 ? '0' : ''}${remainingSeconds}`;
+        
+        // Event-Status
+        elements.eventStatus.className = 'event-status';
+        
+        if (state.ontime.playbackState === 'play') {
+            elements.eventStatus.textContent = 'Läuft';
+            elements.eventStatus.classList.add('running');
+        } else if (state.ontime.playbackState === 'pause') {
+            elements.eventStatus.textContent = 'Pausiert';
+            elements.eventStatus.classList.add('paused');
+        } else if (state.ontime.playbackState === 'stop') {
+            elements.eventStatus.textContent = 'Gestoppt';
+            elements.eventStatus.classList.add('stopped');
+        } else {
+            elements.eventStatus.textContent = 'Nicht aktiv';
         }
-        
-        .sequence-form {
-            display: flex;
-            gap: 10px;
-            margin-top: 10px;
-        }
-        
-        #sequence-name-input {
-            flex-grow: 1;
-            padding: 8px;
-            border: 1px solid #ced4da;
-            border-radius: 4px;
-        }
-        
-        .reset-section {
-            margin: 15px 0;
-            text-align: center;
-        }
-        
-        .btn {
-            padding: 5px 10px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 12px;
-        }
-        
-        .btn-primary {
-            background-color: #007bff;
-            color: white;
-        }
-        
-        .btn-secondary {
-            background-color: #6c757d;
-            color: white;
-        }
-        
-        .btn-success {
-            background-color: #28a745;
-            color: white;
-        }
-        
-        .btn-warning {
-            background-color: #ffc107;
-            color: #212529;
-        }
-        
-        .btn-danger {
-            background-color: #dc3545;
-            color: white;
-        }
-        
-        .btn-info {
-            background-color: #17a2b8;
-            color: white;
-        }
-        
-        .sequence-actions {
-            display: flex;
-            gap: 5px;
-        }
-        
-        .sequence-info {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-        }
-        
-        .sequences-list li {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-    `;
-    
-    document.head.appendChild(style);
-}
-
-/**
- * Handler für den "Sequenz erstellen"-Button
- */
-function handleCreateSequence() {
-    const name = elements.sequenceNameInput.value.trim();
-    if (name) {
-        createSequence(name)
-            .then(() => {
-                elements.sequenceNameInput.value = ''; // Eingabefeld leeren
-            })
-            .catch(error => {
-                console.error('Fehler beim Erstellen der Sequenz:', error);
-            });
     } else {
-        addMessage('warning', 'Bitte einen Namen für die Sequenz eingeben');
+        // Kein aktives Event
+        const eventTitleElement = elements.currentEvent.querySelector('.event-title');
+        eventTitleElement.textContent = 'Kein aktives Event';
+        elements.eventRemainingTime.textContent = '--:--';
+        elements.eventStatus.className = 'event-status';
+        elements.eventStatus.textContent = 'Nicht aktiv';
     }
 }
 
-/**
- * Handler für den "System zurücksetzen"-Button
- */
-function handleResetSystem() {
-    if (confirm('Möchten Sie wirklich das System zurücksetzen und alle Sequenzen löschen?')) {
-        resetSystem();
+// Feuerwerk-Status aktualisieren
+function updateFireworkStatus() {
+    elements.fireworkStatus.innerHTML = '';
+    
+    if (state.firework.sequences.length === 0) {
+        const noSequences = document.createElement('div');
+        noSequences.textContent = 'Keine Feuerwerkssequenzen verfügbar.';
+        elements.fireworkStatus.appendChild(noSequences);
+        return;
     }
-}
-
-// ==========================================
-// Uhr-Funktionalität
-// ==========================================
-
-/**
- * Aktualisiert die Uhrzeitanzeige
- */
-function updateClock() {
-    const now = new Date();
-    elements.currentTime.textContent = formatTime(now);
-}
-
-// ==========================================
-// Ereignisbehandlung und Initialisierung
-// ==========================================
-
-/**
- * Initialisiert alle Event-Listener
- */
-function initEventListeners() {
-    // Notaus-Button
-    elements.emergencyStopBtn.addEventListener('click', () => {
-        if (confirm('ACHTUNG: Notaus auslösen? Dies stoppt alle laufenden Sequenzen!')) {
-            executeEmergencyStop();
-        }
+    
+    state.firework.sequences.forEach(sequence => {
+        const sequenceItem = document.createElement('div');
+        sequenceItem.className = 'firework-sequence';
+        
+        const sequenceName = document.createElement('div');
+        sequenceName.className = 'sequence-name';
+        sequenceName.textContent = sequence.name;
+        
+        const sequenceStatus = document.createElement('div');
+        sequenceStatus.className = `sequence-status status-${sequence.status}`;
+        sequenceStatus.textContent = translateStatus(sequence.status);
+        
+        sequenceItem.appendChild(sequenceName);
+        sequenceItem.appendChild(sequenceStatus);
+        elements.fireworkStatus.appendChild(sequenceItem);
     });
 }
 
-/**
- * Initialisiert die Anwendung
- */
-function init() {
-    // Initialisiere zusätzliche UI-Elemente
-    initUI();
+// Status-Texte übersetzen
+function translateStatus(status) {
+    const statusMap = {
+        'saved': 'Bereit',
+        'first_stage': '1. Freigabe',
+        'second_stage': '2. Freigabe',
+        'running': 'Aktiv',
+        'paused': 'Pausiert',
+        'stopped': 'Gestoppt'
+    };
     
-    // Aktualisiere die Uhr
-    updateClock();
-    setInterval(updateClock, CONFIG.UPDATE_INTERVAL);
-    
-    // Initialisiere Event-Listener
-    initEventListeners();
-    
-    // Verbinde mit ontime
-    initOntimeWebSocket();
-    
-    // Rufe regelmäßig die Feuerwerkssequenzen ab
-    fetchFireworkSequences();
-    setInterval(fetchFireworkSequences, CONFIG.FIREWORKS_POLL_INTERVAL);
-    
-    // Initiale Nachricht
-    addMessage('info', 'Musikfeuerwerk Webapp gestartet');
+    return statusMap[status] || status;
 }
 
-// Starte die Anwendung
+// Systemnachricht hinzufügen
+function addMessage(message, type = 'info') {
+    // Prüfe auf [object Object] und wandle sie in einen lesbaren String um
+    if (message === '[object Object]' || (typeof message === 'object' && message !== null)) {
+        try {
+            message = JSON.stringify(message);
+        } catch (e) {
+            message = 'Nicht anzeigbare Nachricht';
+        }
+    }
+    
+    const now = new Date();
+    
+    // Nachricht zum Zustand hinzufügen
+    state.messages.unshift({
+        time: now,
+        text: message,
+        type: type
+    });
+    
+    // Nur die letzten 20 Nachrichten behalten
+    if (state.messages.length > 20) {
+        state.messages.pop();
+    }
+    
+    // Aktualisiere die Anzeige
+    updateMessages();
+}
+
+// Nachrichtenliste aktualisieren
+function updateMessages() {
+    elements.messageList.innerHTML = '';
+    
+    if (state.messages.length === 0) {
+        const noMessages = document.createElement('div');
+        noMessages.textContent = 'Keine Meldungen vorhanden.';
+        elements.messageList.appendChild(noMessages);
+        return;
+    }
+    
+    state.messages.forEach(message => {
+        const messageItem = document.createElement('div');
+        messageItem.className = `message-item ${message.type}`;
+        
+        const messageTime = document.createElement('div');
+        messageTime.className = 'message-time';
+        messageTime.textContent = message.time.toLocaleTimeString('de-DE');
+        
+        const messageText = document.createElement('div');
+        messageText.className = 'message-text';
+        messageText.textContent = message.text;
+        
+        messageItem.appendChild(messageTime);
+        messageItem.appendChild(messageText);
+        elements.messageList.appendChild(messageItem);
+    });
+}
+
+// WebSocket-Verbindung zu ontime herstellen
+function connectWebSocket() {
+    if (state.websocket) {
+        // Alte Verbindung schließen, falls vorhanden
+        state.websocket.close();
+    }
+    
+    try {
+        state.websocket = new WebSocket(config.ontimeWsUrl);
+        
+        state.websocket.onopen = () => {
+            console.log('WebSocket-Verbindung hergestellt');
+            addMessage('Verbindung zu ontime hergestellt', 'info');
+            state.websocketConnected = true;
+            
+            // Initial-Abfragen senden
+            sendWebSocketMessage({ type: 'poll' });
+        };
+        
+        state.websocket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                console.log('Received message:', data);
+                
+                // Verschiedene Nachrichtentypen verarbeiten
+                if (data.type === 'poll' && data.payload) {
+                    processOntimeData(data.payload);
+                } else if (data.type === 'ontime-timer' && data.payload) {
+                    // Timer-Updates verarbeiten
+                    updateTimer(data.payload);
+                } else if (data.type === 'ontime-runtime' && data.payload) {
+                    // Runtime-Updates verarbeiten
+                    updateRuntime(data.payload);
+                } else if (data.type === 'message' && data.payload) {
+                    // Externe Nachrichten verarbeiten
+                    if (data.payload.external && typeof data.payload.external === 'string') {
+                        addMessage(data.payload.external, 'info');
+                    }
+                }
+            } catch (error) {
+                console.error('Fehler beim Verarbeiten der WebSocket-Nachricht:', error);
+                console.log('Raw message:', event.data);
+            }
+        };
+        
+        state.websocket.onclose = (event) => {
+            console.log('WebSocket-Verbindung geschlossen:', event.code, event.reason);
+            addMessage('Verbindung zu ontime getrennt', 'warning');
+            state.websocketConnected = false;
+            
+            // Versuche, die Verbindung nach einer Weile wiederherzustellen
+            setTimeout(connectWebSocket, config.reconnectInterval);
+        };
+        
+        state.websocket.onerror = (error) => {
+            console.error('WebSocket-Fehler:', error);
+            addMessage('Fehler in der ontime-Verbindung', 'error');
+        };
+    } catch (error) {
+        console.error('Fehler beim Erstellen der WebSocket-Verbindung:', error);
+        addMessage('Konnte keine Verbindung zu ontime herstellen', 'error');
+        
+        // Versuche, die Verbindung nach einer Weile wiederherzustellen
+        setTimeout(connectWebSocket, config.reconnectInterval);
+    }
+}
+
+// WebSocket-Nachricht senden
+function sendWebSocketMessage(message) {
+    if (state.websocketConnected && state.websocket) {
+        try {
+            state.websocket.send(JSON.stringify(message));
+        } catch (error) {
+            console.error('Fehler beim Senden der WebSocket-Nachricht:', error);
+        }
+    } else {
+        console.warn('WebSocket nicht verbunden. Nachricht konnte nicht gesendet werden.');
+    }
+}
+
+// Timer-Updates verarbeiten
+function updateTimer(data) {
+    state.ontime.timeRemaining = data.current;
+    state.ontime.playbackState = data.playback;
+    
+    // UI aktualisieren
+    updateCurrentEvent();
+}
+
+// Runtime-Updates verarbeiten
+function updateRuntime(data) {
+    if (data.selectedEventIndex !== undefined) {
+        state.ontime.currentEventIndex = data.selectedEventIndex;
+    }
+    
+    if (data.numEvents !== undefined && data.numEvents > 0 && state.ontime.events.length === 0) {
+        // Wenn wir die Anzahl der Events kennen, aber keine Events haben, versuche sie zu laden
+        fetchEventList();
+    }
+}
+
+// ontime-Daten verarbeiten
+function processOntimeData(data) {
+    console.log('Processing ontime data:', data);
+    
+    // Timer-Status und verbleibende Zeit
+    if (data.timer) {
+        state.ontime.playbackState = data.timer.playback;
+        state.ontime.timeRemaining = data.timer.current;
+    }
+    
+    // Aktuelles Event extrahieren
+    if (data.eventNow) {
+        // Event direkt zur Liste hinzufügen, falls es noch nicht existiert
+        const eventExists = state.ontime.events.some(e => e.id === data.eventNow.id);
+        if (!eventExists) {
+            state.ontime.events.push(data.eventNow);
+        }
+    }
+    
+    // Nächstes Event extrahieren
+    if (data.eventNext) {
+        // Event direkt zur Liste hinzufügen, falls es noch nicht existiert
+        const eventExists = state.ontime.events.some(e => e.id === data.eventNext.id);
+        if (!eventExists) {
+            state.ontime.events.push(data.eventNext);
+        }
+    }
+    
+    // Runtime-Daten
+    if (data.runtime) {
+        // Aktueller Event-Index
+        if (data.runtime.selectedEventIndex !== undefined) {
+            state.ontime.currentEventIndex = data.runtime.selectedEventIndex;
+        }
+        
+        // Wenn rundown.events fehlt, aber numEvents vorhanden ist, versuche Events abzurufen
+        if (state.ontime.events.length < 2 && data.runtime.numEvents > 0) {
+            fetchEventList();
+        }
+    }
+    
+    // Externe Nachrichten
+    if (data.message && data.message.external) {
+        const externalMessage = data.message.external;
+        if (externalMessage && typeof externalMessage === 'string' &&
+            (state.messages.length === 0 || state.messages[0].text !== externalMessage)) {
+            
+            // Kategorisiere die Nachricht
+            const messageType = externalMessage.includes('FEHLER') ? 'error' : 
+                                externalMessage.includes('WARNUNG') ? 'warning' : 'info';
+            
+            addMessage(externalMessage, messageType);
+        }
+    }
+    
+    // UI aktualisieren
+    updateEventList();
+    updateCurrentEvent();
+}
+
+// Komplette Event-Liste abrufen
+async function fetchEventList() {
+    try {
+        const response = await fetch(`${config.ontimeWsUrl.replace('ws://', 'http://').replace('/ws', '')}/api/data/rundown`);
+        if (!response.ok) {
+            throw new Error(`HTTP-Fehler! Status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Event list data:', data);
+        
+        if (data && data.payload && Array.isArray(data.payload)) {
+            state.ontime.events = data.payload;
+            updateEventList();
+        }
+    } catch (error) {
+        console.error('Fehler beim Abrufen der Event-Liste:', error);
+    }
+}
+
+// Feuerwerk-Daten über HTTP-API abrufen
+async function fetchFireworkStatus() {
+    try {
+        const response = await fetch(`${config.fireworkApiUrl}/`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP-Fehler! Status: ${response.status}`);
+        }
+        
+        state.firework.sequences = await response.json();
+        updateFireworkStatus();
+        
+        // Verbindungsstatus zurücksetzen
+        if (state.firework.connectionError) {
+            state.firework.connectionError = false;
+            addMessage('Verbindung zur Feuerwerkssteuerung wiederhergestellt', 'info');
+        }
+    } catch (error) {
+        console.error('Fehler beim Abrufen des Feuerwerk-Status:', error);
+        
+        // Bei Verbindungsfehlern eine Nachricht anzeigen, aber nur einmal
+        if (!state.firework.connectionError) {
+            addMessage('Keine Verbindung zur Feuerwerkssteuerung', 'warning');
+            state.firework.connectionError = true;
+        }
+    }
+}
+
+// Notaus-Funktion
+async function triggerEmergencyStop() {
+    // Visuelle Rückmeldung für den Notaus-Button
+    elements.emergencyButton.disabled = true;
+    elements.emergencyButton.textContent = 'WIRD AUSGEFÜHRT...';
+    
+    // Timer für Timeout
+    const resetButton = () => {
+        elements.emergencyButton.disabled = false;
+        elements.emergencyButton.textContent = 'NOTAUS';
+    };
+    setTimeout(resetButton, 3000);
+    
+    try {
+        // 1. Pausiere das aktuelle Event in ontime
+        // Versuche zuerst WebSocket
+        if (state.websocketConnected) {
+            sendWebSocketMessage({ type: 'pause' });
+        } else {
+            // Fallback auf HTTP
+            const ontimeResponse = await fetch(`${config.ontimeWsUrl.replace('ws://', 'http://').replace('/ws', '')}/api/pause`);
+            if (!ontimeResponse.ok) {
+                throw new Error(`HTTP-Fehler bei ontime! Status: ${ontimeResponse.status}`);
+            }
+        }
+        
+        addMessage('Notaus ausgelöst: Event pausiert', 'warning');
+        
+        // 2. Stoppe alle Feuerwerkssequenzen
+        const fireworkResponse = await fetch(`${config.fireworkApiUrl}/stop`, {
+            method: 'POST'
+        });
+        
+        if (!fireworkResponse.ok) {
+            throw new Error(`HTTP-Fehler bei Feuerwerk! Status: ${fireworkResponse.status}`);
+        }
+        
+        addMessage('Notaus ausgelöst: Feuerwerk gestoppt', 'warning');
+        
+        // Aktualisiere den Status
+        if (state.websocketConnected) {
+            sendWebSocketMessage({ type: 'poll' });
+        }
+        fetchFireworkStatus();
+        
+    } catch (error) {
+        console.error('Fehler beim Auslösen des Notaus:', error);
+        addMessage(`Fehler beim Notaus: ${error.message}`, 'error');
+        resetButton();
+    }
+}
+
+// Regelmäßiges Polling über WebSocket
+function startPolling() {
+    // Regelmäßig Daten abfragen
+    setInterval(() => {
+        if (state.websocketConnected) {
+            sendWebSocketMessage({ type: 'poll' });
+        }
+    }, config.pollInterval);
+    
+    // Feuerwerk-Status regelmäßig aktualisieren
+    setInterval(fetchFireworkStatus, config.pollInterval);
+}
+
+// Initialisierung der Anwendung
+function init() {
+    // Uhr initialisieren
+    initClock();
+    
+    // WebSocket-Verbindung herstellen
+    connectWebSocket();
+    
+    // Polling starten
+    startPolling();
+    
+    // Notaus-Button
+    elements.emergencyButton.addEventListener('click', triggerEmergencyStop);
+    
+    // Willkommensnachricht
+    addMessage('Feuerwerk-Monitoring gestartet', 'info');
+}
+
+// Starte die Anwendung, wenn das DOM geladen ist
 document.addEventListener('DOMContentLoaded', init);
