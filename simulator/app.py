@@ -1,4 +1,5 @@
 import os
+<<<<<<< HEAD
 import json
 import vlc
 import logging
@@ -13,18 +14,54 @@ from pythonosc.udp_client import SimpleUDPClient
 # Logger konfigurieren
 logging.basicConfig(level=logging.DEBUG, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("feuerwerk-controller")
+=======
+import httpx
+import logging
+from typing import Annotated, Literal
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import HTMLResponse
+from fastapi import Depends, FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
 
 # Dynamische Pfadkonfiguration
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(BASE_DIR, "audio")
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "event_mapping.json")
 
+<<<<<<< HEAD
 # Konfiguration für Feuerwerkssteuerung
 FIREWORK_API_URL = "http://localhost:8000"  # Anpassen an tatsächliche URL des Simulators
 OSC_SERVER_HOST = "127.0.0.1"
 OSC_SERVER_PORT = 4001
 OSC_CLIENT_HOST = "127.0.0.1"
 OSC_CLIENT_PORT = 4001  # Port für ontime OSC-Nachrichten
+=======
+# Berechne das Verzeichnis der statischen Web‑UI-Dateien:
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+WEBAPP_STATIC_DIR = os.path.join(BASE_DIR, "../webapp/static")
+
+# Mounte die statischen Dateien unter "/static"
+app.mount("/static", StaticFiles(directory=WEBAPP_STATIC_DIR, html = True), name="styles.css")
+
+
+# Liefere index.html an der Root-URL aus:
+@app.get("/api/sequences", response_class=HTMLResponse, summary="Startseite der Web-UI")
+def read_index():
+    index_path = os.path.join(WEBAPP_STATIC_DIR, "index.html")
+    with open(index_path, encoding="utf-8") as f:
+        return f.read()
+
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
 
 # Globale Variablen zur Zustandsverwaltung
 current_event_id = None
@@ -57,6 +94,7 @@ def load_event_mapping():
         logger.error(f"Fehler beim Laden des Event-Mappings: {e}")
         return create_default_mapping()
 
+<<<<<<< HEAD
 # Standard-Mapping erstellen
 def create_default_mapping():
     """Erstellt ein Standard-Mapping für Events und Sequenzen."""
@@ -80,6 +118,55 @@ def create_default_mapping():
     }
     
     # Speichern des Mappings
+=======
+
+GetSequence = Annotated[FireworkSequence, Depends(_get_sequence)]
+
+
+@app.get("/api/sequences", summary="Gibt eine Liste aller Feuerwerk-Sequenzen zurück.")
+def get_all_sequences() -> list[FireworkSequence]:
+    return list(sequence_store.values())
+
+
+@app.post(
+    "/api/sequences",
+    summary="Erstellt eine Feuerwerk-Sequenz.",
+    description="Der Sequenz-Name muss als Parameter übergeben werden und eindeutig sein.",
+    responses={403: {"description": "Sequenz-Name exsistiert bereits."}},
+)
+def create_sequence(name: str) -> FireworkSequence:
+    if name in sequence_store:
+        raise HTTPException(status_code=403, detail="Sequence already exists.")
+    sequence_store[name] = FireworkSequence(name=name)
+    return sequence_store[name]
+
+
+@app.delete("/api/sequences", summary="Setzt die Steuerung zurück (löscht alle Sequenzen).")
+def reset():
+    sequence_store.clear()
+    current_stages["running"] = None
+    current_stages["first_stage"] = None
+    current_stages["second_stage"] = None
+
+
+@app.get(
+    "/api/sequences/{name}",
+    summary="Gibt eine Sequenz zurück.",
+    description="Der Sequenz-Name muss exsistieren.",
+    responses={404: {"description": "Sequenz exsistiert nicht."}},
+)
+def get_sequence(sequence: GetSequence) -> FireworkSequence:
+    return sequence
+
+
+@app.delete(
+    "/api/sequences/{name}",
+    summary="Löscht eine Sequenz.",
+    description="Der Sequenz-Name muss exsistieren.",
+    responses={404: {"description": "Sequenz exsistiert nicht."}},
+)
+def delete_sequence(name: str) -> FireworkSequence:
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
     try:
         with open(MAPPING_FILE, "w") as file:
             json.dump(audio_mapping, file, indent=2)
@@ -112,6 +199,7 @@ def initialize_firework_system():
         send_error_to_ontime(f"Fehler bei der Initialisierung des Feuerwerksystems: {str(e)}")
         return False
 
+<<<<<<< HEAD
 def start_firework_sequence(sequence_name):
     """Startet eine Feuerwerkssequenz."""
     if sequence_name == "countdown":
@@ -135,6 +223,22 @@ def start_firework_sequence(sequence_name):
         logger.error(error_msg)
         send_error_to_ontime(error_msg)
         return False
+=======
+@app.patch(
+    "/api/sequences/{name}/first_stage",
+    summary="Aktiviere die erste Freigabe (Status: 'first_stage').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'saved' sein.'\n"
+    "Es darf nur eine Sequenz im Status 'first_stage' sein.",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def sequence_to_first_stage(sequence: GetSequence) -> FireworkSequence:
+    next_stage(sequence, "first_stage")
+    return sequence
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
 
 def pause_firework_sequence(sequence_name):
     """Pausiert eine Feuerwerkssequenz."""
@@ -158,6 +262,7 @@ def pause_firework_sequence(sequence_name):
         send_error_to_ontime(error_msg)
         return False
 
+<<<<<<< HEAD
 def resume_firework_sequence(sequence_name):
     """Setzt eine pausierte Feuerwerkssequenz fort."""
     if sequence_name == "countdown":
@@ -179,6 +284,22 @@ def resume_firework_sequence(sequence_name):
         logger.error(error_msg)
         send_error_to_ontime(error_msg)
         return False
+=======
+@app.patch(
+    "/api/sequences/{name}/second_stage",
+    summary="Aktiviere die zweite Freigabe (Status: 'second_stage').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'first_stage' sein.'\n"
+    "Es darf nur eine Sequenz im Status 'second_stage' sein.",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def sequence_to_second_stage(sequence: GetSequence) -> FireworkSequence:
+    next_stage(sequence, "second_stage")
+    return sequence
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
 
 def stop_firework_sequence():
     """Stoppt alle laufenden Feuerwerkssequenzen."""
@@ -199,6 +320,7 @@ def stop_firework_sequence():
         send_error_to_ontime(error_msg)
         return False
 
+<<<<<<< HEAD
 def first_stage_approval(sequence_name):
     """Erste Freigabestufe für eine Feuerwerkssequenz."""
     if sequence_name == "countdown":
@@ -220,6 +342,22 @@ def first_stage_approval(sequence_name):
         logger.error(error_msg)
         send_error_to_ontime(error_msg)
         return False
+=======
+@app.patch(
+    "/api/sequences/{name}/running",
+    summary="Starte die Sequenz (Status: 'running').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'second_stage' sein.'\n"
+    "Es darf nur eine Sequenz im Status 'running' sein.",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def sequence_to_running(sequence: GetSequence) -> FireworkSequence:
+    next_stage(sequence, "running")
+    return sequence
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
 
 def second_stage_approval(sequence_name):
     """Zweite Freigabestufe für eine Feuerwerkssequenz."""
@@ -243,6 +381,7 @@ def second_stage_approval(sequence_name):
         send_error_to_ontime(error_msg)
         return False
 
+<<<<<<< HEAD
 def send_error_to_ontime(error_message):
     """Sendet eine Fehlermeldung an ontime via OSC."""
     if osc_client:
@@ -301,6 +440,22 @@ def play_audio(event_id):
         player.set_time(time_position)
         logger.info(f"Setze Audio {audio_name} fort von Position {time_position}ms")
         del paused_time[event_id]  # Eintrag aus paused_time entfernen
+=======
+@app.patch(
+    "/api/sequences/{name}/pause",
+    summary="Pausiere die Sequenz (Status: 'paused').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'running' sein.'\n"
+    "Es darf nur eine Sequenz im Status 'paused' sein.",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def pause_sequence(sequence: GetSequence) -> FireworkSequence:
+    if sequence.status in ("paused", "running"):
+        sequence.status = "paused"
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
     else:
         player.play()
         logger.info(f"Starte Audio {audio_name}")
@@ -320,6 +475,7 @@ def pause_audio():
         else:
             logger.info("Audio bereits pausiert oder nicht aktiv")
 
+<<<<<<< HEAD
 def stop_audio():
     """Stoppt die Audiowiedergabe."""
     global current_event_id, player
@@ -348,6 +504,22 @@ def handle_start_event(address, *args):
         sequence_name = event_to_sequence.get(event_id)
         if sequence_name:
             start_firework_sequence(sequence_name)
+=======
+@app.patch(
+    "/api/sequences/{name}/resume",
+    summary="Setzt die Sequenz fort (Status: 'running').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'paused' sein.'\n"
+    "Es darf nur eine Sequenz im Status 'running' sein.",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def resume_sequence(sequence: GetSequence) -> FireworkSequence:
+    if sequence.status == "paused":
+        sequence.status = "running"
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
     else:
         logger.warning("Start-Event ohne Event-ID empfangen")
 
@@ -366,6 +538,7 @@ def handle_pause_event(address, *args):
         if sequence_name:
             pause_firework_sequence(sequence_name)
 
+<<<<<<< HEAD
 def handle_stop_event(address, *args):
     """Behandelt Stop-Ereignisse von ontime."""
     logger.info("Stop-Event empfangen")
@@ -483,3 +656,20 @@ if __name__ == "__main__":
     logger.info("Feuerwerk- und Audio-Controller wird beendet.")
     stop_audio()
     stop_firework_sequence()
+=======
+@app.post(
+    "/api/sequences/stop",
+    summary="Stop die Sequenz (Status: 'stopped').",
+    description="Der Sequenz-Name muss exsistieren.\n"
+    "Die Sequenz muss im Status 'running' oder 'paused' sein.'",
+    responses={
+        403: {"description": "Der Statuswechsel ist nicht zulässig."},
+        404: {"description": "Sequenz exsistiert nicht."},
+    },
+)
+def stop_sequence() -> None:
+    if current_stages["running"] is not None:
+        current_stages["running"].status = "stopped"
+        current_stages["running"] = None
+
+>>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf
