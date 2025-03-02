@@ -15,12 +15,12 @@ AUDIO_DIR = os.path.join(BASE_DIR, "audio")
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "event_mapping.json")
 
 ONTIME_API_URL = "http://localhost:4001/api"
-POLL_INTERVAL = 0.5  # Abfrageintervall in Sekunden
+POLL_INTERVAL = 0.5  
 
-current_event_index = None  # Statt Event-ID verwenden wir den Index
-current_playback_state = None  # 'play', 'pause', 'stop'
+current_event_index = None  
+current_playback_state = None  
 player = None
-audio_files = {}  # Mapping zwischen Event-Index und Audiodatei
+audio_files = {}  
 
 def initialize_vlc():
     """Initialisiert die VLC-Instanz und gibt den Player zurück."""
@@ -59,18 +59,15 @@ def play_audio(event_index):
         logger.error(f"Keine Audio-Datei für Event-Index {event_index} gefunden.")
         return
     
-    # Pfad zur Audiodatei
     audio_path = os.path.join(AUDIO_DIR, audio_file)
     
     if not os.path.exists(audio_path):
         logger.error(f"Audiodatei nicht gefunden: {audio_path}")
         return
     
-    # VLC-Instance erstellen, falls noch nicht vorhanden
     if player is None:
         player = initialize_vlc()
     
-    # Neue Media-Instance erstellen
     vlc_instance = vlc.Instance()
     media = vlc_instance.media_new(audio_path)
     player.set_media(media)
@@ -134,32 +131,26 @@ def check_for_events():
             status = poll_ontime_status()
             
             if status:
-                # Wir verwenden den selectedEventIndex statt einer Event-ID
                 new_event_index = status.get("runtime", {}).get("selectedEventIndex")
                 new_playback_state = status.get("timer", {}).get("playback")
                 
                 logger.debug(f"Status: Index={new_event_index}, Playback={new_playback_state}")
                 
-                # Auf Änderungen im Event-Index reagieren
                 if new_event_index is not None and new_event_index != current_event_index:
                     logger.info(f"Neues Event erkannt: Index {new_event_index}")
                     
-                    # Altes Audio stoppen, falls eins läuft
                     if current_event_index is not None:
                         stop_audio()
                     
-                    # Neues Audio starten, wenn der Playback-Status "play" ist
                     if new_playback_state == "play":
                         play_audio(new_event_index)
                     
                     current_event_index = new_event_index
                 
-                # Auf Änderungen im Playback-Status reagieren
                 if new_playback_state != current_playback_state:
                     logger.info(f"Playback-Status geändert: {current_playback_state} -> {new_playback_state}")
                     
                     if new_playback_state == "play" and current_playback_state == "pause":
-                        # Event wurde fortgesetzt
                         resume_audio()
                     elif new_playback_state == "pause":
                         # Event wurde pausiert
@@ -177,10 +168,8 @@ def check_for_events():
         time.sleep(POLL_INTERVAL)
 
 if __name__ == "__main__":
-    # Überprüfe Audio-Verzeichnis
     if not os.path.exists(AUDIO_DIR):
         logger.warning(f"Audio-Verzeichnis nicht gefunden: {AUDIO_DIR}")
-        # Versuche, das Verzeichnis zu erstellen
         try:
             os.makedirs(AUDIO_DIR)
             logger.info(f"Audio-Verzeichnis erstellt: {AUDIO_DIR}")
@@ -188,19 +177,15 @@ if __name__ == "__main__":
             logger.error(f"Fehler beim Erstellen des Audio-Verzeichnisses: {e}")
     else:
         logger.info(f"Audio-Verzeichnis gefunden: {AUDIO_DIR}")
-        # Liste alle MP3-Dateien im Audio-Verzeichnis auf
         found_files = [f for f in os.listdir(AUDIO_DIR) if f.endswith(".mp3")]
         logger.info(f"Gefundene Audiodateien: {found_files}")
     
-    # Audio-Mapping erstellen
     audio_files = create_audio_mapping()
     
-    # Starte die Überwachung der ontime-Events in einem separaten Thread
     logger.info("Starte Audio-Controller...")
     polling_thread = threading.Thread(target=check_for_events, daemon=True)
     polling_thread.start()
     
-    # Hauptprogramm aktiv halten
     try:
         print("Audio-Controller läuft! Drücken Sie Strg+C zum Beenden...")
         while True:

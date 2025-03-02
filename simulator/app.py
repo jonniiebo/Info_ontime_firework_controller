@@ -19,29 +19,23 @@ BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 AUDIO_DIR = os.path.join(BASE_DIR, "audio")
 MAPPING_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "event_mapping.json")
 
-# Konfiguration für Feuerwerkssteuerung
-FIREWORK_API_URL = "http://localhost:8000"  # Anpassen an tatsächliche URL des Simulators
+FIREWORK_API_URL = "http://localhost:8000"  
 OSC_SERVER_HOST = "127.0.0.1"
 OSC_SERVER_PORT = 4001
 OSC_CLIENT_HOST = "127.0.0.1"
-OSC_CLIENT_PORT = 4001  # Port für ontime OSC-Nachrichten
-
-# Globale Variablen zur Zustandsverwaltung
+OSC_CLIENT_PORT = 4001  
 current_event_id = None
 player = None
 paused_time = {}
 event_to_sequence = {}  # Mapping von Event-IDs zu Feuerwerkssequenzen
 warning_events = {}  # Speichert Events, die in der Warnzeit sind
 danger_events = {}   # Speichert Events, die in der Gefahrenzeit sind
-osc_client = None    # OSC-Client für das Senden von Nachrichten an ontime
-
-# Initialisierung des OSC-Clients
+osc_client = None    
 def init_osc_client():
     global osc_client
     osc_client = SimpleUDPClient(OSC_CLIENT_HOST, OSC_CLIENT_PORT)
     logger.info(f"OSC-Client initialisiert: {OSC_CLIENT_HOST}:{OSC_CLIENT_PORT}")
 
-# Event-Mapping laden oder erstellen
 def load_event_mapping():
     """Lädt das Event-Mapping aus einer JSON-Datei oder erstellt ein Standard-Mapping."""
     if not os.path.exists(MAPPING_FILE):
@@ -57,10 +51,8 @@ def load_event_mapping():
         logger.error(f"Fehler beim Laden des Event-Mappings: {e}")
         return create_default_mapping()
 
-# Standard-Mapping erstellen
 def create_default_mapping():
     """Erstellt ein Standard-Mapping für Events und Sequenzen."""
-    # Mapping für Audiodateien
     audio_mapping = {
         "fd2c87": "countdown",
         "085ba2": "Audio1",
@@ -69,7 +61,6 @@ def create_default_mapping():
         "5851a5": "Audio4"
     }
     
-    # Mapping für Feuerwerkssequenzen
     global event_to_sequence
     event_to_sequence = {
         "fd2c87": "countdown",
@@ -79,7 +70,6 @@ def create_default_mapping():
         "5851a5": "sequence4"
     }
     
-    # Speichern des Mappings
     try:
         with open(MAPPING_FILE, "w") as file:
             json.dump(audio_mapping, file, indent=2)
@@ -88,8 +78,6 @@ def create_default_mapping():
         logger.error(f"Fehler beim Erstellen des Standard-Mappings: {e}")
     
     return audio_mapping
-
-# Feuerwerk-API-Funktionen
 def initialize_firework_system():
     """Initialisiert das Feuerwerksystem durch Löschen aller Sequenzen und Erstellen neuer Sequenzen."""
     try:
@@ -97,7 +85,6 @@ def initialize_firework_system():
         requests.delete(f"{FIREWORK_API_URL}/")
         logger.info("Feuerwerksystem zurückgesetzt.")
         
-        # Sequenzen für jedes Event erstellen
         for event_id, sequence_name in event_to_sequence.items():
             if sequence_name != "countdown":  # Kein Feuerwerk für Countdown
                 response = requests.post(f"{FIREWORK_API_URL}/?name={sequence_name}")
@@ -119,7 +106,6 @@ def start_firework_sequence(sequence_name):
         return True
     
     try:
-        # Versuche die Sequenz zu starten
         response = requests.patch(f"{FIREWORK_API_URL}/{sequence_name}/running")
         if response.status_code == 200:
             logger.info(f"Feuerwerkssequenz '{sequence_name}' gestartet.")
@@ -254,13 +240,11 @@ def send_error_to_ontime(error_message):
         except Exception as e:
             logger.error(f"Fehler beim Senden der Fehlermeldung an ontime: {e}")
 
-# VLC-Instanz erstellen
 def initialize_vlc():
     """Initialisiert die VLC-Instanz und gibt den Player zurück."""
     vlc_instance = vlc.Instance("--verbose=0")
     return vlc_instance.media_player_new()
 
-# Audio-Funktionen
 def play_audio(event_id):
     """Spielt die zum Event passende Audiodatei ab."""
     global current_event_id, player
@@ -272,7 +256,6 @@ def play_audio(event_id):
         logger.error(f"Keine Audio-Datei für Event-ID {event_id} gefunden.")
         return
     
-    # Für Countdown kein Audio abspielen
     if audio_name == "countdown":
         logger.info(f"Countdown gestartet - kein Audio.")
         current_event_id = event_id
@@ -285,16 +268,13 @@ def play_audio(event_id):
         logger.error(f"Audiodatei nicht gefunden: {audio_path}")
         return
     
-    # VLC-Instance erstellen, falls noch nicht vorhanden
     if player is None:
         player = initialize_vlc()
     
-    # Neue Media-Instance erstellen
     vlc_instance = vlc.Instance()
     media = vlc_instance.media_new(audio_path)
     player.set_media(media)
     
-    # Wiedergabeposition wiederherstellen, falls Event pausiert war
     if event_id in paused_time:
         time_position = paused_time[event_id]
         player.play()
@@ -328,23 +308,19 @@ def stop_audio():
         player.stop()
         logger.info("Audio gestoppt")
         
-    # Reset des aktuellen Event-ID und Entfernen aus paused_time
     if current_event_id in paused_time:
         del paused_time[current_event_id]
     
     current_event_id = None
 
-# OSC-Handler
 def handle_start_event(address, *args):
     """Behandelt Start-Ereignisse von ontime."""
     if len(args) > 0:
         event_id = args[0]
         logger.info(f"Start-Event empfangen für Event-ID: {event_id}")
         
-        # Audio abspielen
         play_audio(event_id)
         
-        # Feuerwerk starten
         sequence_name = event_to_sequence.get(event_id)
         if sequence_name:
             start_firework_sequence(sequence_name)
@@ -357,10 +333,8 @@ def handle_pause_event(address, *args):
     
     logger.info("Pause-Event empfangen")
     
-    # Audio pausieren
     pause_audio()
     
-    # Feuerwerk pausieren
     if current_event_id:
         sequence_name = event_to_sequence.get(current_event_id)
         if sequence_name:
@@ -370,10 +344,8 @@ def handle_stop_event(address, *args):
     """Behandelt Stop-Ereignisse von ontime."""
     logger.info("Stop-Event empfangen")
     
-    # Audio stoppen
     stop_audio()
     
-    # Feuerwerk stoppen
     stop_firework_sequence()
 
 def handle_resume_event(address, *args):
@@ -382,11 +354,9 @@ def handle_resume_event(address, *args):
     
     logger.info("Resume-Event empfangen")
     
-    # Audio fortsetzen (wird automatisch durch play_audio gemacht)
     if current_event_id:
         play_audio(current_event_id)
         
-        # Feuerwerk fortsetzen
         sequence_name = event_to_sequence.get(current_event_id)
         if sequence_name:
             resume_firework_sequence(sequence_name)
@@ -409,7 +379,6 @@ def handle_danger_event(address, *args):
         event_id = args[0]
         logger.info(f"Danger-Event empfangen für Event-ID: {event_id}")
         
-        # Zweite Freigabestufe aktivieren, aber nur wenn die erste bereits aktiviert wurde
         if event_id in warning_events:
             sequence_name = event_to_sequence.get(event_id)
             if sequence_name and sequence_name != "countdown":
@@ -420,12 +389,10 @@ def default_handler(address, *args):
     """Gibt alle empfangenen OSC-Nachrichten aus."""
     logger.debug(f"OSC-Nachricht empfangen: {address} {args}")
 
-# OSC-Server einrichten
 def start_osc_server():
     """Startet den OSC-Server zum Empfang von Befehlen von ontime."""
     dispatcher = Dispatcher()
     
-    # OSC-Befehle registrieren
     dispatcher.map("/start", handle_start_event)
     dispatcher.map("/pause", handle_pause_event)
     dispatcher.map("/stop", handle_stop_event)
@@ -433,10 +400,8 @@ def start_osc_server():
     dispatcher.map("/warning", handle_warning_event)
     dispatcher.map("/danger", handle_danger_event)
     
-    # Default-Handler für alle anderen Nachrichten
     dispatcher.set_default_handler(default_handler)
     
-    # Server starten
     server = BlockingOSCUDPServer((OSC_SERVER_HOST, OSC_SERVER_PORT), dispatcher)
     logger.info(f"OSC-Server gestartet und hört auf {OSC_SERVER_HOST}:{OSC_SERVER_PORT}")
     
@@ -448,32 +413,25 @@ def start_osc_server():
         logger.error(f"Fehler im OSC-Server: {e}")
 
 if __name__ == "__main__":
-    # Initialisiere OSC-Client
     init_osc_client()
     
-    # Überprüfe Audio-Verzeichnis
     if not os.path.exists(AUDIO_DIR):
         logger.warning(f"Audio-Verzeichnis nicht gefunden: {AUDIO_DIR}")
     else:
         logger.info(f"Audio-Verzeichnis gefunden: {AUDIO_DIR}")
-        # Liste alle MP3-Dateien im Audio-Verzeichnis auf
         audio_files = [f for f in os.listdir(AUDIO_DIR) if f.endswith(".mp3")]
         logger.info(f"Gefundene Audiodateien: {audio_files}")
     
-    # Lade Event-Mapping und Sequenzen
     event_mapping = load_event_mapping()
     
-    # Initialisiere Feuerwerksystem
     if not initialize_firework_system():
         logger.error("Fehler bei der Initialisierung des Feuerwerksystems. Programm wird beendet.")
         exit(1)
     
-    # Starte OSC-Server in einem separaten Thread
     logger.info("Starte Feuerwerk- und Audio-Controller...")
     osc_thread = threading.Thread(target=start_osc_server, daemon=True)
     osc_thread.start()
     
-    # Hauptprogramm aktiv halten
     try:
         while True:
             time.sleep(1)
