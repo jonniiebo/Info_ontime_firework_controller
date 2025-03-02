@@ -1,22 +1,9 @@
 // Konfiguration
-<<<<<<< HEAD:webapp/app.js
 const config = {
     ontimeWsUrl: 'ws://localhost:4001/ws', // Korrigierte WebSocket-URL für ontime
     fireworkApiUrl: 'http://localhost:8000', // HTTP-API-URL für die Feuerwerkssteuerung
     pollInterval: 2000, // Abfrageintervall für Firewerk-API in ms
     reconnectInterval: 5000 // Intervall für WebSocket-Wiederverbindungsversuche in ms
-=======
-const CONFIG = {
-    // ontime WebSocket-Verbindung
-    ONTIME_WS_URL: 'ws://localhost:4001/ws', // Ontime WebSocket URL
-    
-    // Feuerwerkssteuerung HTTP-Schnittstelle
-    FIREWORKS_API_URL: 'http://localhost:8000/api', // URL zur Feuerwerkssteuerung
-    
-    // Aktualisierungsintervalle (in ms)
-    UPDATE_INTERVAL: 1000, // Interval für Clock-Updates
-    FIREWORKS_POLL_INTERVAL: 2000, // Interval für Feuerwerkssequenz-Updates
->>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf:webapp/static/app.js
 };
 
 // DOM-Elemente
@@ -61,153 +48,8 @@ function initClock() {
     setInterval(updateClock, 1000);
 }
 
-<<<<<<< HEAD:webapp/app.js
 // Event-Liste aktualisieren
 function updateEventList() {
-=======
-/**
- * Erzeugt einen Status-Tag mit entsprechender Farbe
- */
-function createStatusTag(status) {
-    return `<span class="status-tag status-${status}">${status}</span>`;
-}
-
-
-function initOntimeWebSocket() {
-    ontimeWebSocket = new WebSocket(CONFIG.ONTIME_WS_URL);
-    
-    ontimeWebSocket.onopen = () => {
-        console.log('WebSocket-Verbindung zu ontime hergestellt');
-        addMessage('info', 'Verbindung zu ontime hergestellt');
-    };
-    
-    ontimeWebSocket.onclose = () => {
-        console.log('WebSocket-Verbindung zu ontime geschlossen');
-        addMessage('warning', 'Verbindung zu ontime unterbrochen');
-        
-        // Automatischer Wiederverbindungsversuch nach 5 Sekunden
-        setTimeout(initOntimeWebSocket, 5000);
-    };
-    
-    ontimeWebSocket.onerror = (error) => {
-        console.error('WebSocket Fehler:', error);
-        addMessage('error', 'WebSocket-Fehler: Verbindung zu ontime fehlgeschlagen');
-    };
-    
-    ontimeWebSocket.onmessage = (event) => {
-        try {
-            const data = JSON.parse(event.data);
-            handleOntimeMessage(data);
-        } catch (error) {
-            console.error('Fehler beim Verarbeiten der WebSocket-Nachricht:', error);
-        }
-    };
-}
-
-/**
- * Verarbeitet eingehende WebSocket-Nachrichten von ontime
- */
-function handleOntimeMessage(data) {
-    // Verarbeite verschiedene Nachrichtentypen von ontime
-    if (data.type === 'state') {
-        // Aktuellen Zustand verarbeiten (Events, aktuelles Event, etc.)
-        updateOntimeState(data);
-    } else if (data.type === 'externalMessage') {
-        // Externe Nachricht von anderen Systemen (z.B. Fehler vom Feuerwerk)
-        addMessage('error', data.message);
-    }
-}
-
-/**
- * Aktualisiert den Zustand basierend auf ontime-Daten
- */
-function updateOntimeState(data) {
-    if (data.events) {
-        eventsList = data.events;
-        renderEventsList();
-    }
-    
-    if (data.rundownState) {
-        // Aktuelles Event und Zeit
-        currentEventId = data.rundownState.currentEventId || null;
-
-        // Verbleibende Zeit des aktuellen Events
-        if (data.rundownState.currentEvent) {
-            const remaining = data.rundownState.currentEvent.remainingTime || 0;
-            elements.currentEventTime.textContent = `Restzeit: ${formatDuration(remaining)}`;
-            
-            // Automatisch die Feuerwerkssequenz für das Event erstellen, falls nicht vorhanden
-            const currentEvent = data.rundownState.currentEvent;
-            if (currentEvent && currentEvent.title) {
-                const eventTitle = currentEvent.title;
-                if (!fireworkSequences.some(seq => seq.name === eventTitle)) {
-                    maybeCreateSequenceForEvent(eventTitle);
-                }
-            }
-        } else {
-            elements.currentEventTime.textContent = 'Restzeit: --:--';
-        }
-        
-        updateCurrentAndNextEvent();
-    }
-}
-
-/**
- * Prüft, ob eine Sequenz für ein Event erstellt werden sollte und erstellt sie, falls nötig
- */
-async function maybeCreateSequenceForEvent(eventTitle) {
-    // Prüfen, ob bereits eine Sequenz mit diesem Namen existiert
-    const existingSequence = fireworkSequences.find(seq => seq.name === eventTitle);
-    if (!existingSequence) {
-        try {
-            await createSequence(eventTitle);
-        } catch (error) {
-            console.error(`Fehler beim automatischen Erstellen der Sequenz für ${eventTitle}:`, error);
-        }
-    }
-}
-
-/**
- * Aktualisiert die Anzeige des aktuellen und nächsten Events
- */
-function updateCurrentAndNextEvent() {
-    let currentEvent = null;
-    let nextEvent = null;
-    
-    // Finde aktuelles und nächstes Event
-    for (let i = 0; i < eventsList.length; i++) {
-        if (eventsList[i].id === currentEventId) {
-            currentEvent = eventsList[i];
-            if (i + 1 < eventsList.length) {
-                nextEvent = eventsList[i + 1];
-            }
-            break;
-        }
-    }
-    
-    // Aktuelles Event anzeigen
-    if (currentEvent) {
-        elements.currentEventName.textContent = currentEvent.title || currentEvent.id;
-    } else {
-        elements.currentEventName.textContent = '-';
-    }
-    
-    // Nächstes Event anzeigen
-    if (nextEvent) {
-        elements.nextEventName.textContent = nextEvent.title || nextEvent.id;
-    } else {
-        elements.nextEventName.textContent = '-';
-    }
-    
-    // Events-Liste aktualisieren
-    renderEventsList();
-}
-
-/**
- * Rendert die Liste aller Events
- */
-function renderEventsList() {
->>>>>>> 7a6ebc35b9b1745ba0854950ed38d6633a6610cf:webapp/static/app.js
     elements.eventList.innerHTML = '';
     
     if (state.ontime.events.length === 0) {
